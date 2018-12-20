@@ -49,7 +49,7 @@ public class DataTableImportDDI {
     // have already been linked to the corresponding DataTables in the Map. 
     // -- L.A. 4.0 beta 9
     
-    private Map<String, DataTable> processDataDscr(XMLStreamReader xmlr) throws XMLStreamException {
+    public  Map<String, DataTable> processDataDscr(XMLStreamReader xmlr) throws XMLStreamException {
         Map<String, DataTable> dataTablesMap = new HashMap<>();
         Map<String, Integer> varsPerFileMap = new HashMap<>();
 
@@ -100,7 +100,17 @@ public class DataTableImportDDI {
 
         // interval type (DB value may be different than DDI value)
         String _interval = xmlr.getAttributeValue(null, "intrvl");
-        
+
+        //ID
+        String _id_v = xmlr.getAttributeValue(null, "ID");
+        String _id = _id_v.replace("v", "");
+
+        try {
+            long id = Long.parseLong(_id);
+            dv.setId(id);
+        } catch  (NumberFormatException nfe) {
+
+        }
         if (VAR_INTERVAL_CONTIN.equals(_interval)) {
             dv.setIntervalContinuous();
         } else if (VAR_INTERVAL_NOMINAL.equals(_interval)) {
@@ -111,7 +121,7 @@ public class DataTableImportDDI {
             // default is discrete
             dv.setIntervalDiscrete();
         }
-
+        String a =  xmlr.getAttributeValue(null, "wgt");
         dv.setWeighted( VAR_WEIGHTED.equals( xmlr.getAttributeValue(null, "wgt") ) );
         // default is not-wgtd, so null sets weighted to false
 

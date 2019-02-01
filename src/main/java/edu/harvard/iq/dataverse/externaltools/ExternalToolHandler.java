@@ -1,6 +1,7 @@
 package edu.harvard.iq.dataverse.externaltools;
 
 import edu.harvard.iq.dataverse.DataFile;
+import edu.harvard.iq.dataverse.FileMetadata;
 import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import edu.harvard.iq.dataverse.externaltools.ExternalTool.ReservedWord;
 import edu.harvard.iq.dataverse.util.SystemConfig;
@@ -25,6 +26,8 @@ public class ExternalToolHandler {
     private final ExternalTool externalTool;
     private final DataFile dataFile;
 
+    private final FileMetadata fileMetadata;
+
     private final ApiToken apiToken;
 
     /**
@@ -33,7 +36,7 @@ public class ExternalToolHandler {
      * @param apiToken The apiToken can be null because "explore" tools can be
      * used anonymously.
      */
-    public ExternalToolHandler(ExternalTool externalTool, DataFile dataFile, ApiToken apiToken) {
+    public ExternalToolHandler(ExternalTool externalTool, DataFile dataFile, ApiToken apiToken, FileMetadata fileMetadata) {
         this.externalTool = externalTool;
         if (dataFile == null) {
             String error = "A DataFile is required.";
@@ -42,6 +45,7 @@ public class ExternalToolHandler {
         }
         this.dataFile = dataFile;
         this.apiToken = apiToken;
+        this.fileMetadata = fileMetadata;
     }
 
     public DataFile getDataFile() {
@@ -51,6 +55,8 @@ public class ExternalToolHandler {
     public ApiToken getApiToken() {
         return apiToken;
     }
+
+    public FileMetadata getFileMetadata() {return fileMetadata;}
 
     // TODO: rename to handleRequest() to someday handle sending headers as well as query parameters.
     public String getQueryParametersForUrl() {
@@ -88,6 +94,14 @@ public class ExternalToolHandler {
                 if (theApiToken != null) {
                     apiTokenString = theApiToken.getTokenString();
                     return key + "=" + apiTokenString;
+                }
+                break;
+            case META_ID:
+                Long fmId = 0L;
+                FileMetadata fm = getFileMetadata ();
+                if (fm != null) {
+                    fmId = fm.getId();
+                    return key + "=" + fmId;
                 }
                 break;
             default:

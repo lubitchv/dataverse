@@ -82,6 +82,7 @@
                                         <ui:include src="file-configure-dropdown-fragment.xhtml">
                                             <ui:param name="configureTools" value="#{FilePage.getConfigureTools()}"/>
                                             <ui:param name="fileId" value="#{FilePage.fileMetadata.dataFile.id}"/>
+                                            <ui:param name="metaId" value="#{FilePage.fileMetadata.id}"/>
                                             <ui:param name="fileMetadata" value="#{FilePage.fileMetadata}"/>		
                                             <ui:param name="canUpdateDataset" value="#{FilePage.canUpdateDataset()}"/>		
                                         </ui:include>		

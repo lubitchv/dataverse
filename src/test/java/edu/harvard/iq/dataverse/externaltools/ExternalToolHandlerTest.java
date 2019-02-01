@@ -1,6 +1,7 @@
 package edu.harvard.iq.dataverse.externaltools;
 
 import edu.harvard.iq.dataverse.DataFile;
+import edu.harvard.iq.dataverse.FileMetadata;
 import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import javax.json.Json;
 import static org.junit.Assert.assertEquals;
@@ -26,9 +27,10 @@ public class ExternalToolHandlerTest {
                 .build().toString());
         DataFile nullDataFile = null;
         ApiToken nullApiToken = null;
+        FileMetadata nullFileMetadata = null;
         Exception expectedException1 = null;
         try {
-            ExternalToolHandler externalToolHandler1 = new ExternalToolHandler(externalTool, nullDataFile, nullApiToken);
+            ExternalToolHandler externalToolHandler1 = new ExternalToolHandler(externalTool, nullDataFile, nullApiToken, nullFileMetadata);
         } catch (Exception ex) {
             expectedException1 = ex;
         }
@@ -48,7 +50,7 @@ public class ExternalToolHandlerTest {
                 .build().toString());
         Exception expectedException2 = null;
         try {
-            ExternalToolHandler externalToolHandler2 = new ExternalToolHandler(externalTool, nullDataFile, nullApiToken);
+            ExternalToolHandler externalToolHandler2 = new ExternalToolHandler(externalTool, nullDataFile, nullApiToken,nullFileMetadata);
         } catch (Exception ex) {
             expectedException2 = ex;
         }
@@ -70,7 +72,9 @@ public class ExternalToolHandlerTest {
         dataFile.setId(42l);
         ApiToken apiToken = new ApiToken();
         apiToken.setTokenString("7196b5ce-f200-4286-8809-03ffdbc255d7");
-        ExternalToolHandler externalToolHandler3 = new ExternalToolHandler(externalTool, dataFile, apiToken);
+        FileMetadata fileMetadata = new FileMetadata();
+        fileMetadata.setId(42l);
+        ExternalToolHandler externalToolHandler3 = new ExternalToolHandler(externalTool, dataFile, apiToken, fileMetadata);
         String result3 = externalToolHandler3.getQueryParametersForUrl();
         System.out.println("result3: " + result3);
         assertEquals("?key1=42&key2=7196b5ce-f200-4286-8809-03ffdbc255d7", result3);
@@ -86,7 +90,7 @@ public class ExternalToolHandlerTest {
                         )
                 )
                 .build().toString());
-        ExternalToolHandler externalToolHandler4 = new ExternalToolHandler(externalTool, dataFile, nullApiToken);
+        ExternalToolHandler externalToolHandler4 = new ExternalToolHandler(externalTool, dataFile, nullApiToken, nullFileMetadata);
         String result4 = externalToolHandler4.getQueryParametersForUrl();
         System.out.println("result4: " + result4);
         assertEquals("?key1=42", result4);
@@ -104,7 +108,7 @@ public class ExternalToolHandlerTest {
                 .build().toString());
         Exception expectedException = null;
         try {
-            ExternalToolHandler externalToolHandler5 = new ExternalToolHandler(externalTool, dataFile, nullApiToken);
+            ExternalToolHandler externalToolHandler5 = new ExternalToolHandler(externalTool, dataFile, nullApiToken, nullFileMetadata);
             String result5 = externalToolHandler5.getQueryParametersForUrl();
             System.out.println("result5: " + result5);
         } catch (Exception ex) {

@@ -3,11 +3,8 @@ package edu.harvard.iq.dataverse.externaltools;
 import edu.harvard.iq.dataverse.DataFile;
 import edu.harvard.iq.dataverse.DataFileServiceBean;
 import edu.harvard.iq.dataverse.DataTable;
-<<<<<<< HEAD
-=======
 import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.DatasetVersion;
->>>>>>> e6984f9bb62d74e5f87a4bbc7d8556059e5d9712
 import edu.harvard.iq.dataverse.FileMetadata;
 import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import java.util.ArrayList;
@@ -43,13 +40,10 @@ public class ExternalToolServiceBeanTest {
         FileMetadata fileMetadata = new FileMetadata();
         fileMetadata.setId(42l);
         ExternalTool.Type type = ExternalTool.Type.EXPLORE;
-<<<<<<< HEAD
-        ExternalTool externalTool = new ExternalTool("displayName", "description", type, "http://foo.com", "{}");
-        ExternalToolHandler externalToolHandler4 = new ExternalToolHandler(externalTool, dataFile, apiToken, fileMetadata);
-=======
+
         ExternalTool externalTool = new ExternalTool("displayName", "description", type, "http://foo.com", "{}", DataFileServiceBean.MIME_TYPE_TSV_ALT);
-        ExternalToolHandler externalToolHandler4 = new ExternalToolHandler(externalTool, dataFile, apiToken);
->>>>>>> e6984f9bb62d74e5f87a4bbc7d8556059e5d9712
+        ExternalToolHandler externalToolHandler4 = new ExternalToolHandler(externalTool, dataFile, apiToken, fileMetadata);
+
         List<ExternalTool> externalTools = new ArrayList<>();
         externalTools.add(externalTool);
         List<ExternalTool> availableExternalTools = ExternalToolServiceBean.findExternalToolsByFile(externalTools, dataFile);

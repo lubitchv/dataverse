@@ -1,12 +1,10 @@
 package edu.harvard.iq.dataverse.externaltools;
 
 import edu.harvard.iq.dataverse.DataFile;
-<<<<<<< HEAD
-=======
+
 import edu.harvard.iq.dataverse.DataFileServiceBean;
 import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.DatasetVersion;
->>>>>>> e6984f9bb62d74e5f87a4bbc7d8556059e5d9712
 import edu.harvard.iq.dataverse.FileMetadata;
 import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import javax.json.Json;

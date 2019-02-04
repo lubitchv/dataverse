@@ -168,6 +168,9 @@ public class DataVariable implements Serializable {
     @OrderBy("catOrder")
     private Collection<VariableCategory> categories;
 
+    @OneToMany (mappedBy="dataVariable", cascade={ CascadeType.REMOVE, CascadeType.MERGE,CascadeType.PERSIST})
+    private Collection<VariableMetadata> variablemetadatas;
+
     /*
      * The boolean "ordered": identifies ordered categorical variables ("ordinals"). 
      */
@@ -220,6 +223,7 @@ public class DataVariable implements Serializable {
         invalidRanges = new ArrayList<>();
         summaryStatistics=new ArrayList<>();
         categories = new ArrayList<>();
+        variablemetadatas = new ArrayList ();
     }
     
     /*
@@ -429,6 +433,14 @@ public class DataVariable implements Serializable {
     
     public void setCategories(List<VariableCategory> categories) {
         this.categories = categories;
+    }
+
+    public Collection<VariableMetadata> getVariablemetadatas() {
+        return this.variablemetadatas;
+    }
+
+    public void setVariablemetadatas(List<VariableMetadata> variablemetadatas) {
+        this.variablemetadatas = variablemetadatas;
     }
 
     /**

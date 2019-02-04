@@ -81,6 +81,8 @@ public class FileMetadata implements Serializable {
     @JoinColumn(nullable=false)
     private DataFile dataFile;
 
+
+
     /**
      * There are two types of provenance types and this "free-form" type is
      * represented in the GUI as text box the user can type into. The other type
@@ -347,8 +349,6 @@ public class FileMetadata implements Serializable {
         this.datasetVersion = datasetVersion;
     }
 
-
-
     public DataFile getDataFile() {
         return dataFile;
     }
@@ -356,7 +356,6 @@ public class FileMetadata implements Serializable {
     public void setDataFile(DataFile dataFile) {
         this.dataFile = dataFile;
     }
-
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

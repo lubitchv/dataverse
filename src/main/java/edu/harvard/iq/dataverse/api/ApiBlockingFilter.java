@@ -166,16 +166,15 @@ public class ApiBlockingFilter implements javax.servlet.Filter {
             if(req.getHeader("Origin") != null){
                 res.addHeader("Access-Control-Allow-Origin", "*");
                 //res.addHeader("Access-Control-Expose-Headers", "X-Cache-Date, X-Atmosphere-tracking-id");
+                if("OPTIONS".equals(req.getMethod())){
+                    res.addHeader("Access-Control-Allow-Methods", "PUT");
+                    res.addHeader("Access-Control-Allow-Headers", "Origin, Content-Type, X-Dataverse-key");
+                }
+                fc.doFilter(req,res);
+            } else {
+                fc.doFilter(sr, sr1);
             }
 
-            if("OPTIONS".equals(req.getMethod())){
-                res.addHeader("Access-Control-Allow-Methods", "PUT");
-                res.addHeader("Access-Control-Allow-Headers", "Origin, Content-Type, X-Dataverse-key");
-            }
-
-
-            //fc.doFilter(sr, sr1);
-            fc.doFilter(req,res);
         } catch ( ServletException se ) {
             logger.log(Level.WARNING, "Error processing " + requestURI +": " + se.getMessage(), se);
             HttpServletResponse resp = (HttpServletResponse) sr1;

@@ -23,6 +23,8 @@ import edu.harvard.iq.dataverse.PermissionServiceBean;
 import edu.harvard.iq.dataverse.RoleAssigneeServiceBean;
 import edu.harvard.iq.dataverse.UserNotificationServiceBean;
 import edu.harvard.iq.dataverse.UserServiceBean;
+import edu.harvard.iq.dataverse.FileMetadata;
+
 import edu.harvard.iq.dataverse.actionlogging.ActionLogServiceBean;
 import edu.harvard.iq.dataverse.authorization.AuthenticationServiceBean;
 import edu.harvard.iq.dataverse.authorization.RoleAssignee;
@@ -458,6 +460,21 @@ public abstract class AbstractApiBean {
                         badRequest(BundleUtil.getStringFromBundle("find.datafile.error.datafile.not.found.bad.id", Collections.singletonList(id))));
             }
         }
+    }
+
+    protected FileMetadata findMetadataOrDie(String id) throws WrappedResponse {
+        FileMetadata fileMetadata;
+
+        try {
+            fileMetadata = fileService.findFileMetadata(Long.parseLong(id));
+                if (fileMetadata == null) {
+                    throw new WrappedResponse(notFound(BundleUtil.getStringFromBundle("find.filemetadata.error.filemetadata.not.found.id", Collections.singletonList(id))));
+                }
+                return fileMetadata;
+            } catch (NumberFormatException nfe) {
+                throw new WrappedResponse(
+                        badRequest(BundleUtil.getStringFromBundle("find.datafile.error.filemetadata.not.found.bad.id", Collections.singletonList(id))));
+            }
     }
     
     protected DatasetLinkingDataverse findDatasetLinkingDataverseOrDie(String datasetId, String linkingDataverseId) throws WrappedResponse {

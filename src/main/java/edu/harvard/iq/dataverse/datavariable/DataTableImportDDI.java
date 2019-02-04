@@ -7,10 +7,18 @@
 package edu.harvard.iq.dataverse.datavariable;
 
 import edu.harvard.iq.dataverse.DataTable;
+import edu.harvard.iq.dataverse.export.DDIExportServiceBean;
 import edu.harvard.iq.dataverse.util.StringUtil;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Logger;
+import javax.ejb.EJB;
+import javax.ejb.Stateless;
+import javax.inject.Named;
+import javax.persistence.EntityManager;
+import javax.persistence.PersistenceContext;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
@@ -19,7 +27,12 @@ import javax.xml.stream.XMLStreamReader;
  *
  * @author Leonid Andreev
  */
-public class DataTableImportDDI {
+
+
+public class DataTableImportDDI  {
+
+    @PersistenceContext(unitName = "VDCNet-ejbPU")
+    private EntityManager em;
 
     public static final String VAR_INTERVAL_DISCRETE = "discrete";
     public static final String VAR_INTERVAL_CONTIN = "contin";
@@ -39,6 +52,13 @@ public class DataTableImportDDI {
 
     
     public static final String NOTE_TYPE_UNF = "VDC:UNF";
+
+    private static final Logger logger = Logger.getLogger(DDIExportServiceBean.class.getCanonicalName());
+
+    public DataTableImportDDI(EntityManager em) {
+        this.em = em;
+    }
+
 
     // Method processDataDscr takes XMLStreamReader xmlr that has just 
     // encountered the DDI tag <dataDscr>, processes all the variables and 
@@ -91,27 +111,33 @@ public class DataTableImportDDI {
     }
 
     private void processVar(XMLStreamReader xmlr, Map<String, DataTable> dataTablesMap, Map<String, Integer> varsPerFileMap) throws XMLStreamException {
-        DataVariable dv = new DataVariable(0,null);
-        dv.setName( xmlr.getAttributeValue(null, "name") );
+        //DataVariable dv = new DataVariable(0,null);
 
-        try {
-            dv.setNumberOfDecimalPoints( new Long( xmlr.getAttributeValue(null, "dcml") ) );
-        } catch (NumberFormatException nfe) {}
-
-        // interval type (DB value may be different than DDI value)
-        String _interval = xmlr.getAttributeValue(null, "intrvl");
-
-        //ID
         String _id_v = xmlr.getAttributeValue(null, "ID");
         String _id = _id_v.replace("v", "");
 
-        try {
-            long id = Long.parseLong(_id);
-            dv.setId(id);
-        } catch  (NumberFormatException nfe) {
 
-        }
-        if (VAR_INTERVAL_CONTIN.equals(_interval)) {
+        long id = Long.parseLong(_id);
+
+        DataVariable dv = em.find(DataVariable.class , id);
+
+
+        //dv.setName( xmlr.getAttributeValue(null, "name") );
+        VariableMetadata vm = new VariableMetadata();
+        boolean newvarmetadata = false;
+
+       /* try {
+            dv.setNumberOfDecimalPoints( new Long( xmlr.getAttributeValue(null, "dcml") ) );
+        } catch (NumberFormatException nfe) {}*/
+
+        // interval type (DB value may be different than DDI value)
+        //String _interval = xmlr.getAttributeValue(null, "intrvl");
+
+        //ID
+
+
+
+       /* if (VAR_INTERVAL_CONTIN.equals(_interval)) {
             dv.setIntervalContinuous();
         } else if (VAR_INTERVAL_NOMINAL.equals(_interval)) {
             dv.setIntervalNominal();
@@ -120,9 +146,13 @@ public class DataTableImportDDI {
         } else {
             // default is discrete
             dv.setIntervalDiscrete();
+        }*/
+        String wgt =  xmlr.getAttributeValue(null, "wgt");
+        if (wgt != null && wgt.equals("wgt")) {
+            vm.setIsweightvar(true);
+            newvarmetadata = true;
         }
-        String a =  xmlr.getAttributeValue(null, "wgt");
-        dv.setWeighted( VAR_WEIGHTED.equals( xmlr.getAttributeValue(null, "wgt") ) );
+        //dv.setWeighted( VAR_WEIGHTED.equals( xmlr.getAttributeValue(null, "wgt") ) );
         // default is not-wgtd, so null sets weighted to false
 
 
@@ -130,33 +160,37 @@ public class DataTableImportDDI {
             if (event == XMLStreamConstants.START_ELEMENT) {
                 if (xmlr.getLocalName().equals("location")) {
                     processLocation(xmlr, dv, dataTablesMap, varsPerFileMap);
-                }
-                else if (xmlr.getLocalName().equals("labl")) {
-                    String _labl = processLabl( xmlr, LEVEL_VARIABLE );
+                } else if (xmlr.getLocalName().equals("labl")) {
+                    String _labl = processLabl(xmlr, LEVEL_VARIABLE);
                     if (_labl != null && !_labl.isEmpty()) {
-                        dv.setLabel( _labl );
+                        dv.setLabel(_labl);
+                        vm.setLabel(_labl);
                     }
                 } else if (xmlr.getLocalName().equals("universe")) {
-                    dv.setUniverse( parseText(xmlr) );
+                    processUniverse(xmlr, dv, vm);
                 } else if (xmlr.getLocalName().equals("invalrng")) {
-                    processInvalrng( xmlr, dv );
+                    processInvalrng(xmlr, dv);
                 } else if (xmlr.getLocalName().equals("varFormat")) {
-                    processVarFormat( xmlr, dv );
+                    processVarFormat(xmlr, dv);
                 } else if (xmlr.getLocalName().equals("sumStat")) {
-                    processSumStat( xmlr, dv );
+                    processSumStat(xmlr, dv);
                 } else if (xmlr.getLocalName().equals("catgry")) {
-                    processCatgry( xmlr, dv );
+                    processCatgry(xmlr, dv);
                 } else if (xmlr.getLocalName().equals("notes")) {
-                    String _note = parseNoteByType( xmlr, NOTE_TYPE_UNF );
-                    if (_note != null && !_note.isEmpty()) {
-                        dv.setUnf( parseUNF( _note ) );
-                    }
+                    processNote(xmlr, NOTE_TYPE_UNF, dv, vm);
+                } else if (xmlr.getLocalName().equals("qstn")) {
+                    processQstn(xmlr, dv, vm);
                 }
 
             } else if (event == XMLStreamConstants.END_ELEMENT) {
-                if (xmlr.getLocalName().equals("var")) return;
+                if (xmlr.getLocalName().equals("var")) {
+                    vm.setDataVariable(dv);
+                    dv.getVariablemetadatas().add(vm);
+                    return;
+                }
             }
         }
+
     }
 
 
@@ -297,6 +331,22 @@ public class DataTableImportDDI {
         dv.getSummaryStatistics().add(ss);
     }
 
+    private void processQstn(XMLStreamReader xmlr, DataVariable dv, VariableMetadata vm) throws XMLStreamException {
+
+        for (int event = xmlr.next(); event != XMLStreamConstants.END_DOCUMENT; event = xmlr.next()) {
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                if (xmlr.getLocalName().equals("qstnLit")) {
+                    vm.setLiteralquestion( parseText(xmlr, false) );
+                } else if (xmlr.getLocalName().equals("ivuInstr")) {
+                    vm.setInterviewinstruction(parseText(xmlr, false) );
+                }
+            } else if (event == XMLStreamConstants.END_ELEMENT) {
+                if (xmlr.getLocalName().equals("qstn")) return;
+            }
+        }
+
+    }
+
     private void processCatgry(XMLStreamReader xmlr, DataVariable dv) throws XMLStreamException {
         VariableCategory cat = new VariableCategory();
         cat.setMissing( "Y".equals( xmlr.getAttributeValue(null, "missing") ) ); // default is N, so null sets missing to false
@@ -383,6 +433,26 @@ public class DataTableImportDDI {
             return parseText(xmlr);
         } else {
             return null;
+        }
+    }
+
+    private void processNote (XMLStreamReader xmlr, String type, DataVariable dv, VariableMetadata vm) throws XMLStreamException {
+
+        String unf_type =  xmlr.getAttributeValue(null, "type");
+        String _note = parseText(xmlr);
+
+        if (unf_type != null && type.equalsIgnoreCase( unf_type ))  {
+            dv.setUnf( parseUNF( _note ) );
+        } else {
+            vm.setNotes(_note);
+        }
+    }
+
+    private void processUniverse (XMLStreamReader xmlr, DataVariable dv,  VariableMetadata vm ) throws XMLStreamException {
+        String universe = parseText(xmlr);
+        if (universe != null && !universe.isEmpty()) {
+            dv.setUniverse(universe);
+            vm.setUniverse(universe);
         }
     }
 

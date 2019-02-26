@@ -97,7 +97,7 @@ public class VariableMetadata implements Serializable  {
     private DataVariable weightvariable;
 
     public VariableMetadata () {
-
+        categoriesMetadata = new ArrayList<CategoryMetadata>() ;
     }
 
     public VariableMetadata (DataVariable dataVariable, FileMetadata fileMetadata) {
@@ -193,7 +193,7 @@ public class VariableMetadata implements Serializable  {
         return categoriesMetadata;
     }
 
-    public void setWfreq(Set<CategoryMetadata> categoriesMetadata) {
+    public void setWfreq(ArrayList<CategoryMetadata> categoriesMetadata) {
         this.categoriesMetadata = categoriesMetadata;
 
     }

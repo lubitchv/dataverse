@@ -235,6 +235,11 @@ public class DDIExportServiceBean {
         writeAttribute(xmlw, "ID", "v" + dv.getId().toString());
         writeAttribute(xmlw, "name", dv.getName());
 
+        FileMetadata latestFm = dv.getDataTable().getDataFile().getFileMetadata();
+
+        List<VariableMetadata> vmList = variableService.findByDataVarIdAndFileMetaId(dv.getId(),latestFm.getId());
+
+
         if (dv.getNumberOfDecimalPoints() != null) {
             writeAttribute(xmlw, "dcml", dv.getNumberOfDecimalPoints().toString());
         }
@@ -268,10 +273,15 @@ public class DDIExportServiceBean {
 
         // labl
         if (checkField("labl", excludedFieldSet, includedFieldSet)) {
-            if (!StringUtilisEmpty(dv.getLabel())) {
+            if (vmList.size() == 0 || StringUtilisEmpty(vmList.get(0).getLabel()) && !StringUtilisEmpty(dv.getLabel())) {
                 xmlw.writeStartElement("labl");
                 writeAttribute(xmlw, "level", "variable");
                 xmlw.writeCharacters(dv.getLabel());
+                xmlw.writeEndElement(); //labl
+            } else if (vmList.size() != 0 && !StringUtilisEmpty(vmList.get(0).getLabel())) {
+                xmlw.writeStartElement("labl");
+                writeAttribute(xmlw, "level", "variable");
+                xmlw.writeCharacters(vmList.get(0).getLabel());
                 xmlw.writeEndElement(); //labl
             }
         }
@@ -313,9 +323,6 @@ public class DDIExportServiceBean {
 
         //universe
         if (checkField("universe", excludedFieldSet, includedFieldSet)) {
-            FileMetadata latestFm = dv.getDataTable().getDataFile().getFileMetadata();
-
-            List<VariableMetadata> vmList = variableService.findByDataVarIdAndFileMetaId(dv.getId(),latestFm.getId());
 
             if (vmList != null && vmList.size() >0) {
                 VariableMetadata vm = vmList.get(0);
@@ -402,6 +409,35 @@ public class DDIExportServiceBean {
             writeAttribute(xmlw, "type", "VDC:UNF");
             xmlw.writeCharacters(dv.getUnf());
             xmlw.writeEndElement(); //notes
+        }
+        if (checkField("notes", excludedFieldSet, includedFieldSet)) {
+            if (vmList != null && vmList.size() > 0) {
+                VariableMetadata vm = vmList.get(0);
+                if (!StringUtilisEmpty(vm.getNotes())) {
+                    xmlw.writeStartElement("notes");
+                    xmlw.writeCData(vm.getNotes());
+                    xmlw.writeEndElement(); //notes CDATA
+                }
+            }
+        }
+        if (checkField("qstn", excludedFieldSet, includedFieldSet)) {
+            if (vmList != null && vmList.size() > 0) {
+                VariableMetadata vm = vmList.get(0);
+                if (!StringUtilisEmpty(vm.getLiteralquestion()) || !StringUtilisEmpty(vm.getInterviewinstruction())) {
+                    xmlw.writeStartElement("qstn");
+                    if (!StringUtilisEmpty(vm.getLiteralquestion())) {
+                        xmlw.writeStartElement("qstnLit");
+                        xmlw.writeCharacters(vm.getLiteralquestion());
+                        xmlw.writeEndElement(); // qstnLit
+                    }
+                    if (!StringUtilisEmpty(vm.getInterviewinstruction())) {
+                        xmlw.writeStartElement("ivuInstr");
+                        xmlw.writeCharacters(vm.getInterviewinstruction());
+                        xmlw.writeEndElement(); //ivuInstr
+                    }
+                    xmlw.writeEndElement(); //qstn
+                }
+            }
         }
 
         xmlw.writeEndElement(); //var

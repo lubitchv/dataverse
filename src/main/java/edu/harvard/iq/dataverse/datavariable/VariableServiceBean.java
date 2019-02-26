@@ -60,6 +60,22 @@ public class VariableServiceBean {
         return query.getResultList();
 
     }
+
+    public List<VariableCategory> findCategory(Long varId, String catValue) {
+        TypedQuery<VariableCategory> query = em.createQuery("SELECT object(o) FROM VariableCategory as o where o.dataVariable.id =:varId and o.value =:catValue", VariableCategory.class);
+
+        query.setParameter("varId", varId);
+        query.setParameter("catValue", catValue);
+        return query.getResultList();
+    }
+
+    public List<CategoryMetadata> findCategoryMetadata(Long catId, Long varMetId) {
+        TypedQuery<CategoryMetadata> query = em.createQuery("SELECT object(o) FROM CategoryMetadata as o where o.VariableMetadata.id =:varMetId and o.VariableCategory.id =:catId", CategoryMetadata.class);
+
+        query.setParameter("catId", catId);
+        query.setParameter("varMetId", varMetId);
+        return query.getResultList();
+    }
     
     /* 
      * This is awful!

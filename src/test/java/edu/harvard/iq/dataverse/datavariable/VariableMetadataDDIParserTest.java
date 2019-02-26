@@ -128,20 +128,8 @@ public class VariableMetadataDDIParserTest {
 
     void testCategoriesVar1(VariableMetadata vm) {
         Collection<CategoryMetadata> cms = vm.getWfreq();
-        assertEquals(cms.size(),2);
+        assertEquals(cms.size(),0);
 
-        for (CategoryMetadata cm : cms) {
-            switch (cm.getCategory().getValue()) {
-                case "1":
-                    assertEquals(cm.getWfreq(),null);
-                    break;
-                case "2":
-                    assertEquals(cm.getWfreq(),null);
-                    break;
-                default:
-                    assertEquals(0,1);
-            }
-        }
     }
 
     void testCategoriesVar3(VariableMetadata vm) {

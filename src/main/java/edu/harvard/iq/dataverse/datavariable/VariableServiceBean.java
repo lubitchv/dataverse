@@ -70,7 +70,7 @@ public class VariableServiceBean {
     }
 
     public List<CategoryMetadata> findCategoryMetadata(Long catId, Long varMetId) {
-        TypedQuery<CategoryMetadata> query = em.createQuery("SELECT object(o) FROM CategoryMetadata as o where o.VariableMetadata.id =:varMetId and o.VariableCategory.id =:catId", CategoryMetadata.class);
+        TypedQuery<CategoryMetadata> query = em.createQuery("SELECT object(o) FROM CategoryMetadata as o where o.variableMetadata.id =:varMetId and o.category.id =:catId", CategoryMetadata.class);
 
         query.setParameter("catId", catId);
         query.setParameter("varMetId", varMetId);

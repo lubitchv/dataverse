@@ -183,15 +183,41 @@ public class EditDDI  extends AbstractApiBean {
                     List<VariableMetadata> vml = variableService.findByDataVarIdAndFileMetaId(vm.getDataVariable().getId(), fml.get(0).getId());
                     if (vml.size() > 0) {
                         vm.setId(vml.get(0).getId());
-
-                        for (CategoryMetadata cm : vm.getWfreq()) {
-                            List<CategoryMetadata> cms = variableService.findCategoryMetadata(cm.getCategory().getId(), vm.getId());
-                            if (cms.size() > 0) {
-                                cm.setId(cms.get(0).getId());
+                        if (!vm.isWeighted() && vml.get(0).isWeighted()) {
+                            for (CategoryMetadata cm : vml.get(0).getCategoriesMetadata()) {
+                                CategoryMetadata oldCm = em.find(CategoryMetadata.class,cm.getId());
+                                em.remove(oldCm);
                             }
-
-                        }
-                    }
+                        } /*else {
+                            if (vm.isWeighted() && vml.get(0).isWeighted() && vm.getWeightvariable().getId() !=  vml.get(0).getWeightvariable().getId()) {
+                                for (CategoryMetadata cm : vml.get(0).getCategoriesMetadata()) {
+                                    Long cmId = cm.getCategory().getId();
+                                    long metaId = vml.get(0).getId();
+                                    List<CategoryMetadata> cms = variableService.findCategoryMetadata(cmId,metaId);
+                                    if (cms.size() >0 ) {
+                                        for (CategoryMetadata cmNew : vm.getCategoriesMetadata()) {
+                                            if (cms.get(0).getCategory().getValue().equals(cmNew.getCategory().getValue())) {
+                                                cm.setId(cms.get(0).getId());
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }*/ } else {
+                                for (CategoryMetadata cm : vml.get(0).getCategoriesMetadata()) {
+                                    List<CategoryMetadata> cms = variableService.findCategoryMetadata(cm.getCategory().getId(), vml.get(0).getId());
+                                    if (cms.size() > 0) {
+                                        for (CategoryMetadata cmNew : vm.getCategoriesMetadata()) {
+                                            if (cms.get(0).getCategory().getValue().equals(cmNew.getCategory().getValue())) {
+                                                cm.setId(cms.get(0).getId());
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        //}
+                    //}
                     vm.setFileMetadata(fml.get(0));
                     em.merge(vm);
                 }
@@ -233,7 +259,7 @@ public class EditDDI  extends AbstractApiBean {
             if (noUpdate) continue;
 
             varMet.setDataVariable(dv);
-            Collection<CategoryMetadata> cms = varMet.getWfreq();
+            Collection<CategoryMetadata> cms = varMet.getCategoriesMetadata();
             for (CategoryMetadata cm : cms) {
                 String catValue = cm.getCategory().getValue();
                 VariableCategory vc = variableService.findCategory(varId,catValue).get(0);
@@ -248,47 +274,47 @@ public class EditDDI  extends AbstractApiBean {
     private boolean  compareVarMetadata(VariableMetadata vmOld, VariableMetadata vmNew) {
         boolean thesame = true;
 
-        if (vmOld.getNotes() == null && vmNew.getNotes() != null && !vmNew.getNotes().trim().equals("")) {
+        if (checkDiffEmpty(vmOld.getNotes(), vmNew.getNotes())) {
             thesame = false;
-        } else if (vmNew.getNotes() == null && vmOld.getNotes() != null && !vmOld.getNotes().trim().equals("")) {
+        } else if (checkDiffEmpty(vmNew.getNotes(), vmOld.getNotes())) {
             thesame = false;
-        }else if (vmOld.getNotes() != null && vmNew.getNotes() != null && !vmOld.getNotes().equals(vmNew.getNotes())) {
+        }else if (checkDiff(vmOld.getNotes(), vmNew.getNotes())) {
             thesame = false;
-        } else if ( vmOld.getUniverse() == null && vmNew.getUniverse() != null && !vmNew.getUniverse().trim().equals("")) {
+        } else if ( checkDiffEmpty(vmOld.getUniverse(), vmNew.getUniverse())) {
             thesame = false;
-        } else if (vmNew.getUniverse() == null && vmOld.getUniverse() != null && !vmOld.getUniverse().trim().equals("")) {
+        } else if (checkDiffEmpty(vmNew.getUniverse(), vmOld.getUniverse())) {
                 thesame = false;
-        } else if (vmOld.getUniverse() != null && vmNew.getUniverse() != null && !vmOld.getUniverse().equals(vmNew.getUniverse())) {
+        } else if (checkDiff(vmOld.getUniverse(),vmNew.getUniverse())) {
             thesame = false;
-        } else if (vmOld.getInterviewinstruction() == null && vmNew.getInterviewinstruction() != null && !vmNew.getInterviewinstruction().trim().equals("")) {
+        } else if (checkDiffEmpty(vmOld.getInterviewinstruction(),vmNew.getInterviewinstruction())) {
             thesame = false;
-        } else if (  vmNew.getInterviewinstruction() == null && vmOld.getInterviewinstruction() != null && !vmOld.getInterviewinstruction().trim().equals("")) {
+        } else if ( checkDiffEmpty(vmNew.getInterviewinstruction(),vmOld.getInterviewinstruction())) {
             thesame = false;
-        } else if (vmOld.getInterviewinstruction() != null && vmNew.getInterviewinstruction() != null && !vmOld.getInterviewinstruction().equals(vmNew.getInterviewinstruction())) {
+        } else if (checkDiff(vmOld.getInterviewinstruction(),vmNew.getInterviewinstruction())) {
             thesame = false;
-        } else  if (vmOld.getLiteralquestion() == null && vmNew.getLiteralquestion() != null && !vmNew.getLiteralquestion().trim().equals("")) {
+        } else  if (checkDiffEmpty(vmOld.getLiteralquestion(),vmNew.getLiteralquestion())) {
             thesame = false;
-        } else if (vmNew.getLiteralquestion() == null && vmOld.getLiteralquestion() != null && !vmOld.getLiteralquestion().trim().equals("")) {
+        } else if (checkDiffEmpty(vmNew.getLiteralquestion(),vmOld.getLiteralquestion())) {
             thesame = false;
-        } else if (vmNew.getLiteralquestion() != null && vmOld.getLiteralquestion() != null && !vmOld.getLiteralquestion().equals(vmNew.getLiteralquestion())) {
+        } else if (checkDiff(vmOld.getLiteralquestion(),vmNew.getLiteralquestion())) {
             thesame = false;
-        } else  if (vmOld.getLabel() == null && vmNew.getLabel() != null && !vmNew.getLabel().trim().equals("")) {
+        } else  if (checkDiffEmpty(vmOld.getLabel(),vmNew.getLabel())) {
             thesame = false;
-        } else if  (vmNew.getLabel() == null && vmOld.getLabel() != null && !vmOld.getLabel().trim().equals("")) {
+        } else if  (checkDiffEmpty(vmNew.getLabel(),vmOld.getLabel())) {
             thesame = false;
-        } else if (vmNew.getLabel() != null && vmOld.getLabel() != null && !vmOld.getLabel().equals(vmNew.getLabel())) {
+        } else if (checkDiff(vmOld.getLabel(),vmNew.getLabel())) {
             thesame = false;
         } else if (vmOld.isIsweightvar() != vmNew.isIsweightvar() ) {
             thesame = false;
-        } else if (vmOld.isWeighted() != vmOld.isWeighted()) {
+        } else if (vmOld.isWeighted() != vmNew.isWeighted()) {
             thesame = false;
-        } else if (vmOld.isWeighted() == vmOld.isWeighted()) {
+        } else if (vmOld.isWeighted() == vmNew.isWeighted()) {
             if (vmOld.isWeighted() && vmOld.getWeightvariable().getId() != vmNew.getWeightvariable().getId()) {
                 thesame = false;
             }
         } else {
-            ArrayList<CategoryMetadata> cmsOld = (ArrayList) vmOld.getWfreq();
-            ArrayList<CategoryMetadata> cmsNew = (ArrayList) vmNew.getWfreq();
+            ArrayList<CategoryMetadata> cmsOld = (ArrayList) vmOld.getCategoriesMetadata();
+            ArrayList<CategoryMetadata> cmsNew = (ArrayList) vmNew.getCategoriesMetadata();
 
 
             if (cmsOld.size() != cmsNew.size())
@@ -310,13 +336,13 @@ public class EditDDI  extends AbstractApiBean {
     private boolean AreNotDefaultValues(VariableMetadata varMet, DataVariable dv) {
         boolean thedefault = true;
 
-        if (varMet.getNotes() != null && !varMet.getNotes().equals("")) {
+        if (varMet.getNotes() != null && !varMet.getNotes().trim().equals("")) {
             thedefault = false;
-        } else if (varMet.getUniverse() != null && !varMet.getUniverse().equals("") ) {
+        } else if (varMet.getUniverse() != null && !varMet.getUniverse().trim().equals("") ) {
             thedefault = false;
-        } else if (varMet.getInterviewinstruction() != null && !varMet.getInterviewinstruction().equals("")) {
+        } else if (varMet.getInterviewinstruction() != null && !varMet.getInterviewinstruction().trim().equals("")) {
             thedefault = false;
-        } else if (varMet.getLiteralquestion() != null && varMet.getLiteralquestion().equals("")) {
+        } else if (varMet.getLiteralquestion() != null && varMet.getLiteralquestion().trim().equals("")) {
             thedefault = false;
         } else if (dv.getLabel() != null && !dv.getLabel().equals(varMet.getLabel())) {
             thedefault = false;
@@ -324,14 +350,6 @@ public class EditDDI  extends AbstractApiBean {
             thedefault = false;
         } else if (varMet.isWeighted() != false) {
             thedefault = false;
-        } else {
-
-        }
-
-        ArrayList<CategoryMetadata> cms = (ArrayList) varMet.getWfreq();
-
-        if (cms != null && cms.size()>0) {
-            thedefault = true;
         }
 
         return thedefault;
@@ -376,16 +394,19 @@ public class EditDDI  extends AbstractApiBean {
         JH.addMessage(FacesMessage.SEVERITY_FATAL,  BundleUtil.getStringFromBundle("dataset.message.datasetversionfailure"));
     }
 
-    private boolean StringUtilisEmpty(String str) {
-        if (str == null || str.trim().equals("")) {
+    private boolean checkDiffEmpty(String str1, String str2) {
+        if (str1 == null && str2 != null && !str2.trim().equals("")) {
+            return true;
+        }
+        return false;
+
+    }
+    private boolean checkDiff(String str1, String str2) {
+        if (str1 != null && str2 != null && !str1.equals(str2)) {
             return true;
         }
         return false;
     }
-
-
-
-
 }
 
 

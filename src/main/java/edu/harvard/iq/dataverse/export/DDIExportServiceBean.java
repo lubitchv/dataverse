@@ -12,15 +12,10 @@ import edu.harvard.iq.dataverse.DataFile;
 import edu.harvard.iq.dataverse.DataFileServiceBean;
 import edu.harvard.iq.dataverse.DataTable;
 import edu.harvard.iq.dataverse.FileMetadata;
-import edu.harvard.iq.dataverse.datavariable.VariableMetadata;
+import edu.harvard.iq.dataverse.datavariable.*;
 import edu.harvard.iq.dataverse.dataaccess.DataConverter;
 import edu.harvard.iq.dataverse.dataaccess.StorageIO;
 import edu.harvard.iq.dataverse.dataaccess.TabularSubsetGenerator;
-import edu.harvard.iq.dataverse.datavariable.DataVariable;
-import edu.harvard.iq.dataverse.datavariable.VariableRange;
-import edu.harvard.iq.dataverse.datavariable.VariableServiceBean;
-import edu.harvard.iq.dataverse.datavariable.SummaryStatistic;
-import edu.harvard.iq.dataverse.datavariable.VariableCategory;
 import edu.harvard.iq.dataverse.ingest.IngestServiceBean;
 
 import java.io.File;
@@ -238,6 +233,10 @@ public class DDIExportServiceBean {
         FileMetadata latestFm = dv.getDataTable().getDataFile().getFileMetadata();
 
         List<VariableMetadata> vmList = variableService.findByDataVarIdAndFileMetaId(dv.getId(),latestFm.getId());
+        VariableMetadata vm = null;
+        if (vmList != null && vmList.size() >0) {
+            vm = vmList.get(0);
+        }
 
 
         if (dv.getNumberOfDecimalPoints() != null) {
@@ -252,6 +251,15 @@ public class DDIExportServiceBean {
             String interval = dv.getIntervalLabel();
             if (interval != null) {
                 writeAttribute(xmlw, "intrvl", interval);
+            }
+        }
+
+        if (vm != null) {
+            if (vm.isIsweightvar()) {
+                writeAttribute(xmlw, "wgt", "wgt");
+            }
+            if (vm.isWeighted() && vm.getWeightvariable() != null) {
+                writeAttribute(xmlw, "wgt-var", "v"+vm.getWeightvariable().getId().toString());
             }
         }
 
@@ -278,7 +286,7 @@ public class DDIExportServiceBean {
                 writeAttribute(xmlw, "level", "variable");
                 xmlw.writeCharacters(dv.getLabel());
                 xmlw.writeEndElement(); //labl
-            } else if (vmList.size() != 0 && !StringUtilisEmpty(vmList.get(0).getLabel())) {
+            } else if (vm != null && !StringUtilisEmpty(vm.getLabel())) {
                 xmlw.writeStartElement("labl");
                 writeAttribute(xmlw, "level", "variable");
                 xmlw.writeCharacters(vmList.get(0).getLabel());
@@ -324,8 +332,7 @@ public class DDIExportServiceBean {
         //universe
         if (checkField("universe", excludedFieldSet, includedFieldSet)) {
 
-            if (vmList != null && vmList.size() >0) {
-                VariableMetadata vm = vmList.get(0);
+            if (vm != null) {
                 if (!StringUtilisEmpty(vm.getUniverse())) {
                     xmlw.writeStartElement("universe");
                     xmlw.writeCharacters(vm.getUniverse());
@@ -381,6 +388,19 @@ public class DDIExportServiceBean {
                     }
                     xmlw.writeEndElement(); //catStat
                 }
+                //catStat weighted freq
+                if (vm != null && vm.isWeighted()) {
+                    for (CategoryMetadata cm : vm.getCategoriesMetadata()) {
+                        if (cm.getCategory().getValue().equals(cat.getValue())) {
+                            xmlw.writeStartElement("catStat");
+                            writeAttribute(xmlw, "wgtd", "wgtd");
+                            writeAttribute(xmlw, "type", "freq");
+                            xmlw.writeCharacters(cm.getWfreq().toString());
+                            xmlw.writeEndElement(); //catStat
+                            break;
+                        }
+                    }
+                }
 
                 xmlw.writeEndElement(); //catgry
             }
@@ -411,8 +431,7 @@ public class DDIExportServiceBean {
             xmlw.writeEndElement(); //notes
         }
         if (checkField("notes", excludedFieldSet, includedFieldSet)) {
-            if (vmList != null && vmList.size() > 0) {
-                VariableMetadata vm = vmList.get(0);
+            if (vm != null) {
                 if (!StringUtilisEmpty(vm.getNotes())) {
                     xmlw.writeStartElement("notes");
                     xmlw.writeCData(vm.getNotes());
@@ -421,8 +440,7 @@ public class DDIExportServiceBean {
             }
         }
         if (checkField("qstn", excludedFieldSet, includedFieldSet)) {
-            if (vmList != null && vmList.size() > 0) {
-                VariableMetadata vm = vmList.get(0);
+            if (vm != null) {
                 if (!StringUtilisEmpty(vm.getLiteralquestion()) || !StringUtilisEmpty(vm.getInterviewinstruction())) {
                     xmlw.writeStartElement("qstn");
                     if (!StringUtilisEmpty(vm.getLiteralquestion())) {

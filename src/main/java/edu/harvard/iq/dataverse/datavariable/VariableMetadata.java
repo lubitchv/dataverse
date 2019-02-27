@@ -189,11 +189,11 @@ public class VariableMetadata implements Serializable  {
         return weighted;
     }
 
-    public Collection<CategoryMetadata> getWfreq() {
+    public Collection<CategoryMetadata> getCategoriesMetadata() {
         return categoriesMetadata;
     }
 
-    public void setWfreq(ArrayList<CategoryMetadata> categoriesMetadata) {
+    public void setCategoriesMetadata(ArrayList<CategoryMetadata> categoriesMetadata) {
         this.categoriesMetadata = categoriesMetadata;
 
     }

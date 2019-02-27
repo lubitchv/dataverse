@@ -212,7 +212,7 @@ public class VariableMetadataDDIParser {
                     if (cm != null) {
                         cm.setVariableMetadata(newVM);
                         cm.setCategory(cat);
-                        newVM.getWfreq().add(cm);
+                        newVM.getCategoriesMetadata().add(cm);
                     }
                 }
 

@@ -121,7 +121,9 @@ public class EditDDI  extends AbstractApiBean {
             if (newDatasetVersion.getId() == null) {
                 //for new draft version
 
-                if (isNewDraftVersion(mapVarToVarMet, latestFml.get(0))) {
+                boolean groupUpdate = newGroups(varGroupMap,latestFml.get(0));
+                boolean varUpdate = isNewDraftVersion(mapVarToVarMet, latestFml.get(0));
+                if (varUpdate || groupUpdate) {
 
                     Command<Dataset> cmd;
                     try {
@@ -135,10 +137,18 @@ public class EditDDI  extends AbstractApiBean {
                         ((UpdateDatasetVersionCommand) cmd).setValidateLenient(true);
                         dataset = commandEngine.submit(cmd);
 
-                        for ( VariableMetadata varMet : mapVarToVarMet.values()) {
-                            varMet.setFileMetadata(fml.get(0));
-                            em.merge(varMet);
+                        for (VariableMetadata varMet : mapVarToVarMet.values()) {
+                                varMet.setFileMetadata(fml.get(0));
+                                em.merge(varMet);
                         }
+
+                        //add New groups
+                        for (VarGroup varGroup : varGroupMap.values()) {
+                                varGroup.setFileMetadata(fml.get(0));
+                                varGroup.setId(null);
+                                em.merge(varGroup);
+                        }
+
 
                     } catch (EJBException ex) {
                         StringBuilder error = new StringBuilder();
@@ -160,7 +170,7 @@ public class EditDDI  extends AbstractApiBean {
                 }
             } else {
 
-                ArrayList<VariableMetadata> neededToUpdateVM = checkVariableData(mapVarToVarMet, fml.get(0));
+               ArrayList<VariableMetadata> neededToUpdateVM = checkVariableData(mapVarToVarMet, fml.get(0));
 
                 Timestamp updateTime = new Timestamp(new Date().getTime());
 
@@ -197,6 +207,22 @@ public class EditDDI  extends AbstractApiBean {
                     em.merge(vm);
 
                 }
+
+                //remove old groups
+                List<VarGroup> oldGroups = variableService.findAllGroupsByFileMetadata(fml.get(0).getId());
+                if (oldGroups != null) {
+                    for (int i = 0; i < oldGroups.size(); i++) {
+                        em.remove(oldGroups.get(i));
+                    }
+                }
+
+                //add new groups
+                for (VarGroup varGroup : varGroupMap.values()) {
+                    varGroup.setFileMetadata(fml.get(0));
+                    varGroup.setId(null);
+                    em.merge(varGroup);
+                }
+
             }
 
         }
@@ -213,6 +239,28 @@ public class EditDDI  extends AbstractApiBean {
 
         vmdp.processDataDscr(xmlr,mapVarToVarMet, varGroupMap);
 
+    }
+
+    private boolean newGroups(Map<Long,VarGroup> varGroupMap, FileMetadata fm) {
+        boolean areNewGroups = false;
+
+        List<VarGroup> varGroups = variableService.findAllGroupsByFileMetadata(fm.getId());
+        if (varGroups.size() != varGroupMap.size()) {
+            return true;
+        }
+
+        for (Long id : varGroupMap.keySet()) {
+            VarGroup dbVarGroup = em.find(VarGroup.class, id);
+
+            if (dbVarGroup != null){
+                dbVarGroup.setFileMetadata(fm);
+                if (!dbVarGroup.equals(varGroupMap.get(id))) {
+                    return true;
+                }
+            }
+        }
+
+        return areNewGroups;
     }
 
     private boolean isNewDraftVersion(Map<Long, VariableMetadata> mapVarToVarMet, FileMetadata fm) {
@@ -272,9 +320,7 @@ public class EditDDI  extends AbstractApiBean {
                 break;
             }
         }
-            /*if (fm.getId() != null) {
-                vml = variableService.findByDataVarIdAndFileMetaId(varId, fm.getId());
-            }*/
+
         if (prevVm != null) {
             noUpdate = compareVarMetadata(prevVm, varMet);
         } else {
@@ -405,11 +451,6 @@ public class EditDDI  extends AbstractApiBean {
         }
         return auth;
 
-    }
-
-    private void populateDatasetUpdateFailureMessage(){
-
-        JH.addMessage(FacesMessage.SEVERITY_FATAL,  BundleUtil.getStringFromBundle("dataset.message.datasetversionfailure"));
     }
 
     private boolean checkDiffEmpty(String str1, String str2) {

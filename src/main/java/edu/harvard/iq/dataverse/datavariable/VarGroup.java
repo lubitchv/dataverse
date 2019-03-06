@@ -76,4 +76,5 @@ public class VarGroup {
     public FileMetadata getFileMetadata() {
         return fileMetadata;
     }
+
 }

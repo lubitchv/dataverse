@@ -105,72 +105,29 @@ public class EditDDI  extends AbstractApiBean {
             return error(Response.Status.NOT_ACCEPTABLE, "bad xml file" );
         }
 
+        Dataset dataset = dataFile.getOwner();
+        DatasetVersion newDatasetVersion = dataFile.getOwner().getEditVersion();
+        List<FileMetadata> fml = newDatasetVersion.getFileMetadatas();
 
+        DatasetVersion latestDatasetVersion = dataFile.getOwner().getLatestVersionForCopy();
+        List<FileMetadata> latestFml = latestDatasetVersion.getFileMetadatas();
 
-        if (mapVarToVarMet != null && mapVarToVarMet.size() > 0) {
+        ArrayList<VariableMetadata> neededToUpdateVM = new ArrayList<VariableMetadata>();
 
-            //create new version
-            Dataset dataset = dataFile.getOwner();
-            DatasetVersion newDatasetVersion = dataFile.getOwner().getEditVersion();
-            List<FileMetadata> fml = newDatasetVersion.getFileMetadatas();
+        if (newDatasetVersion.getId() == null) {
+            //for new draft version
 
-            DatasetVersion latestDatasetVersion = dataFile.getOwner().getLatestVersionForCopy();
-            List<FileMetadata> latestFml = latestDatasetVersion.getFileMetadatas();
+            boolean groupUpdate = newGroups(varGroupMap, latestFml.get(0));
+            boolean varUpdate = varUpdates(mapVarToVarMet, latestFml.get(0), neededToUpdateVM);
+            if (varUpdate || groupUpdate) {
+                createNewDraftVersion(neededToUpdateVM, varGroupMap, dataset, newDatasetVersion);
 
-
-            if (newDatasetVersion.getId() == null) {
-                //for new draft version
-
-                boolean groupUpdate = newGroups(varGroupMap,latestFml.get(0));
-                boolean varUpdate = isNewDraftVersion(mapVarToVarMet, latestFml.get(0));
-                if (varUpdate || groupUpdate) {
-
-                    Command<Dataset> cmd;
-                    try {
-                        Timestamp updateTime = new Timestamp(new Date().getTime());
-
-                        newDatasetVersion.setCreateTime(updateTime);
-                        dataset.setModificationTime(updateTime);
-
-
-                        cmd = new UpdateDatasetVersionCommand(dataset, dvRequestService.getDataverseRequest(), filesToBeDeleted);
-                        ((UpdateDatasetVersionCommand) cmd).setValidateLenient(true);
-                        dataset = commandEngine.submit(cmd);
-
-                        for (VariableMetadata varMet : mapVarToVarMet.values()) {
-                                varMet.setFileMetadata(fml.get(0));
-                                em.merge(varMet);
-                        }
-
-                        //add New groups
-                        for (VarGroup varGroup : varGroupMap.values()) {
-                                varGroup.setFileMetadata(fml.get(0));
-                                varGroup.setId(null);
-                                em.merge(varGroup);
-                        }
-
-
-                    } catch (EJBException ex) {
-                        StringBuilder error = new StringBuilder();
-                        error.append(ex).append(" ");
-                        error.append(ex.getMessage()).append(" ");
-                        Throwable cause = ex;
-                        while (cause.getCause() != null) {
-                            cause = cause.getCause();
-                            error.append(cause).append(" ");
-                            error.append(cause.getMessage()).append(" ");
-                        }
-                        logger.log(Level.INFO, "Couldn''t save dataset: {0}", error.toString());
-
-                        return null;
-                    } catch (CommandException ex) { ;
-                        logger.log(Level.INFO, "Couldn''t save dataset: {0}", ex.getMessage());
-                        return null;
-                    }
-                }
             } else {
+            }
+        } else {
+            updateDraftVersion(neededToUpdateVM, varGroupMap, dataset, newDatasetVersion );
 
-               ArrayList<VariableMetadata> neededToUpdateVM = checkVariableData(mapVarToVarMet, fml.get(0));
+               //neededToUpdateVM = checkVariableData(mapVarToVarMet, fml.get(0));
 
                 Timestamp updateTime = new Timestamp(new Date().getTime());
 
@@ -228,6 +185,115 @@ public class EditDDI  extends AbstractApiBean {
         }
         return ok("Updated");
     }
+
+    private boolean createNewDraftVersion(ArrayList<VariableMetadata> neededToUpdateVM, Map<Long,VarGroup> varGroupMap, Dataset dataset, DatasetVersion newDatasetVersion ) {
+        Command<Dataset> cmd;
+        try {
+            Timestamp updateTime = new Timestamp(new Date().getTime());
+
+            newDatasetVersion.setCreateTime(updateTime);
+            dataset.setModificationTime(updateTime);
+
+            cmd = new UpdateDatasetVersionCommand(dataset, dvRequestService.getDataverseRequest(), filesToBeDeleted);
+            ((UpdateDatasetVersionCommand) cmd).setValidateLenient(true);
+            dataset = commandEngine.submit(cmd);
+
+            List<FileMetadata> fml = newDatasetVersion.getFileMetadatas();
+
+            for (int i=0; i< neededToUpdateVM.size(); i++) {
+                neededToUpdateVM.get(i).setFileMetadata(fml.get(0));
+                em.merge(neededToUpdateVM.get(i));
+            }
+
+            //add New groups
+            for (VarGroup varGroup : varGroupMap.values()) {
+                varGroup.setFileMetadata(fml.get(0));
+                varGroup.setId(null);
+                em.merge(varGroup);
+            }
+
+
+        } catch (EJBException ex) {
+            StringBuilder error = new StringBuilder();
+            error.append(ex).append(" ");
+            error.append(ex.getMessage()).append(" ");
+            Throwable cause = ex;
+            while (cause.getCause() != null) {
+                cause = cause.getCause();
+                error.append(cause).append(" ");
+                error.append(cause.getMessage()).append(" ");
+            }
+            logger.log(Level.INFO, "Couldn''t save dataset: {0}", error.toString());
+
+            return false;
+        } catch (CommandException ex) { ;
+            logger.log(Level.INFO, "Couldn''t save dataset: {0}", ex.getMessage());
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean updateDraftVersion(ArrayList<VariableMetadata> neededToUpdateVM, Map<Long,VarGroup> varGroupMap, Dataset dataset, DatasetVersion newDatasetVersion ) {
+
+
+        Timestamp updateTime = new Timestamp(new Date().getTime());
+
+        newDatasetVersion.setLastUpdateTime(updateTime);
+        dataset.setModificationTime(updateTime);
+        List<FileMetadata> fml = newDatasetVersion.getFileMetadatas();
+
+        for (int i = 0; i < neededToUpdateVM.size(); i++) {
+            VariableMetadata vm = neededToUpdateVM.get(i);
+            List<VariableMetadata> vml = variableService.findByDataVarIdAndFileMetaId(vm.getDataVariable().getId(), fml.get(0).getId());
+            if (vml.size() > 0) {
+                vm.setId(vml.get(0).getId());
+                if (!vm.isWeighted() && vml.get(0).isWeighted()) { //unweight the variable
+                    for (CategoryMetadata cm : vml.get(0).getCategoriesMetadata()) {
+                        CategoryMetadata oldCm = em.find(CategoryMetadata.class, cm.getId());
+                        em.remove(oldCm);
+                    }
+                } else {
+                    //variable is weighted
+                    for (CategoryMetadata cm : vml.get(0).getCategoriesMetadata()) { // update categories
+                        List<CategoryMetadata> cms = variableService.findCategoryMetadata(cm.getCategory().getId(), vml.get(0).getId());
+                        if (cms.size() > 0) {
+                            for (CategoryMetadata cmNew : vm.getCategoriesMetadata()) {
+                                if (cms.get(0).getCategory().getValue().equals(cmNew.getCategory().getValue())) {
+                                    cmNew.setId(cms.get(0).getId());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            vm.setFileMetadata(fml.get(0));
+            em.merge(vm);
+
+        }
+
+        //remove old groups
+        List<VarGroup> oldGroups = variableService.findAllGroupsByFileMetadata(fml.get(0).getId());
+        if (oldGroups != null) {
+            for (int i = 0; i < oldGroups.size(); i++) {
+                em.remove(oldGroups.get(i));
+            }
+        }
+
+        //add new groups
+        for (VarGroup varGroup : varGroupMap.values()) {
+            varGroup.setFileMetadata(fml.get(0));
+            varGroup.setId(null);
+            em.merge(varGroup);
+        }
+
+        return true;
+    }
+
+
+
 
 
 

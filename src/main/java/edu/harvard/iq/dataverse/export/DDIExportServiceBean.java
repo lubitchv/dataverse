@@ -225,6 +225,27 @@ public class DDIExportServiceBean {
         }
     }
 
+    private void createVarGroupDDI(XMLStreamWriter xmlw, Set<String> excludedFieldSet, Set<String> includedFieldSet, VarGroup varGrp) throws XMLStreamException{
+        xmlw.writeStartElement("varGrp");
+        writeAttribute(xmlw, "ID", "VG" + varGrp.getId().toString());
+        String vars = "";
+        Set<DataVariable> varsInGroup = varGrp.getVarsInGroup();
+        for (DataVariable var : varsInGroup) {
+            vars = vars + " v" + var.getId();
+        }
+        vars = vars.trim();
+        writeAttribute(xmlw, "var", vars );
+
+        if (checkField("labl", excludedFieldSet, includedFieldSet)) {
+            if (!StringUtilisEmpty(varGrp.getLabel())) {
+                xmlw.writeStartElement("labl");
+                xmlw.writeCharacters(varGrp.getLabel());
+                xmlw.writeEndElement(); // group label (labl)
+            }
+        }
+        xmlw.writeEndElement(); //varGrp
+    }
+
     private void createVarDDI(XMLStreamWriter xmlw, Set<String> excludedFieldSet, Set<String> includedFieldSet, DataVariable dv) throws XMLStreamException {
         xmlw.writeStartElement("var");
         writeAttribute(xmlw, "ID", "v" + dv.getId().toString());
@@ -484,12 +505,23 @@ public class DDIExportServiceBean {
         
         DataTable dt = fileService.findDataTableByFileId(df.getId());
 
+
         if (checkField("fileDscr", excludedFieldSet, includedFieldSet)) {
             createFileDscr(xmlw, excludedFieldSet, null, df, dt);
         }
 
         // And now, the variables:
         xmlw.writeStartElement("dataDscr");
+
+        if (checkField("varGrp", excludedFieldSet, includedFieldSet)) {
+
+            FileMetadata latestFm = df.getFileMetadata();
+            List<VarGroup> varGroups = variableService.findAllGroupsByFileMetadata(latestFm.getId());
+
+            for (VarGroup varGrp : varGroups) {
+                createVarGroupDDI(xmlw, excludedFieldSet, null, varGrp);
+            }
+        }
 
         if (checkField("var", excludedFieldSet, includedFieldSet)) {
             List<DataVariable> vars = variableService.findByDataTableId(dt.getId());
@@ -583,6 +615,12 @@ public class DDIExportServiceBean {
             for (FileMetadata fileMetadata : tabularDataFiles) {
                 DataTable dt = fileService.findDataTableByFileId(fileMetadata.getDataFile().getId());
                 List<DataVariable> vars = variableService.findByDataTableId(dt.getId());
+
+                List<VarGroup> varGroups = variableService.findAllGroupsByFileMetadata(fileMetadata.getId());
+
+                for (VarGroup varGrp : varGroups) {
+                    createVarGroupDDI(xmlw, excludedFieldSet, null, varGrp);
+                }
 
                 for (DataVariable var : vars) { 
                     createVarDDI(xmlw, excludedFieldSet, null, var);

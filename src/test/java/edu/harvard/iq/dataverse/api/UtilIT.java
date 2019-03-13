@@ -1919,4 +1919,13 @@ public class UtilIT {
         String apiPath = String.format("/oai?verb=ListIdentifiers&set=%s&metadataPrefix=%s", setName, metadataFormat);
         return given().get(apiPath);
     }
+
+    static Response editDDI(String fileId, String apiToken, InputStream body) {
+        Response response = given()
+                .header(API_TOKEN_HTTP_HEADER, apiToken)
+                .body(body)
+                .contentType(ContentType.XML)
+                .put("/api/edit/" + fileId);
+        return response;
+    }
 }

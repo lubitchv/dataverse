@@ -1920,12 +1920,28 @@ public class UtilIT {
         return given().get(apiPath);
     }
 
-    static Response editDDI(String fileId, String apiToken, InputStream body) {
+    static Response editDDI(String body, String fileId, String apiToken) {
+        if (apiToken == null) {
+            apiToken = "";
+        }
         Response response = given()
                 .header(API_TOKEN_HTTP_HEADER, apiToken)
-                .body(body)
                 .contentType(ContentType.XML)
+                .accept(ContentType.XML)
+                .body(body)
+                .when()
                 .put("/api/edit/" + fileId);
         return response;
+
     }
+
+    /*static Response editDDI(String body, String fileId, String apiToken) {
+        Response response = given()
+                .header(API_TOKEN_HTTP_HEADER, apiToken)
+                .contentType(ContentType.XML)
+                .body(body)
+                .when()
+                .put("/api/edit/test/" + fileId);
+        return response;
+    }*/
 }

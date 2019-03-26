@@ -21,6 +21,7 @@ import org.hibernate.validator.constraints.NotBlank;
 import edu.harvard.iq.dataverse.DataTable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import javax.persistence.Column;
 import javax.persistence.Index;
 import javax.persistence.OrderBy;
@@ -169,6 +170,7 @@ public class DataVariable implements Serializable {
     @OrderBy("catOrder")
     private Collection<VariableCategory> categories;
 
+
     /*
      * The boolean "ordered": identifies ordered categorical variables ("ordinals"). 
      */
@@ -205,6 +207,7 @@ public class DataVariable implements Serializable {
 
     @OneToMany (mappedBy="dataVariable", cascade={ CascadeType.REMOVE, CascadeType.MERGE,CascadeType.PERSIST})
     private Collection<VariableMetadata> variableMetadatas;
+
     
     public DataVariable() {
     }

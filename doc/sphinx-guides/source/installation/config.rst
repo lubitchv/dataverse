@@ -622,6 +622,8 @@ How to Help Translate Dataverse Into Your Language
 
 Please join the `dataverse-internationalization-wg`_ mailing list and contribute to https://github.com/GlobalDataverseCommunityConsortium/dataverse-language-packs to help translate Dataverse into various languages!
 
+Some external tools are also ready to be translated, especially if they are using the ``{localeCode}`` reserved word in their tool manifest. For details, see the :doc:`/api/external-tools` section of the API Guide.
+
 .. _dataverse-internationalization-wg: https://groups.google.com/forum/#!forum/dataverse-internationalization-wg
 
 .. _Web-Analytics-Code:
@@ -1441,12 +1443,12 @@ In the example below we reduce the timeout to 4 hours:
 :TwoRavensUrl
 +++++++++++++
 
-The ``:TwoRavensUrl`` option is no longer valid. See :doc:`r-rapache-tworavens` and :doc:`external-tools`.
+The ``:TwoRavensUrl`` option is no longer valid. See :doc:`r-rapache-tworavens` and the :doc:`/admin/external-tools` section of the Admin Guide.
 
 :TwoRavensTabularView
 +++++++++++++++++++++
 
-The ``:TwoRavensTabularView`` option is no longer valid. See :doc:`r-rapache-tworavens` and :doc:`external-tools`.
+The ``:TwoRavensTabularView`` option is no longer valid. See :doc:`r-rapache-tworavens` and the :doc:`/admin/external-tools` section of the Admin Guide.
 
 :GeoconnectCreateEditMaps
 +++++++++++++++++++++++++

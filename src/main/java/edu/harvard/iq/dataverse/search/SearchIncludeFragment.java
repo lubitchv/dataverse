@@ -8,6 +8,7 @@ import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.DatasetServiceBean;
 import edu.harvard.iq.dataverse.DatasetVersionServiceBean;
 import edu.harvard.iq.dataverse.Dataverse;
+import edu.harvard.iq.dataverse.DataversePage;
 import edu.harvard.iq.dataverse.DataverseServiceBean;
 import edu.harvard.iq.dataverse.DataverseSession;
 import edu.harvard.iq.dataverse.DvObject;
@@ -80,6 +81,8 @@ public class SearchIncludeFragment implements java.io.Serializable {
     ThumbnailServiceWrapper thumbnailServiceWrapper;
     @Inject
     WidgetWrapper widgetWrapper;  
+    @Inject
+    DataversePage dataversePage;
     @EJB
     SystemConfig systemConfig;
 
@@ -145,7 +148,8 @@ public class SearchIncludeFragment implements java.io.Serializable {
     private boolean rootDv = false;
     private Map<Long, String> harvestedDatasetDescriptions = null;
     private boolean solrErrorEncountered = false;
-    
+    private String adjustFacetName = null; 
+    private int adjustFacetNumber = 0; 
     /**
      * @todo:
      *
@@ -172,7 +176,7 @@ public class SearchIncludeFragment implements java.io.Serializable {
      *
      * see also https://trello.com/c/jmry3BJR/28-browse-dataverses
      */
-    public String searchRedirect(String dataverseRedirectPage) {
+    public String searchRedirect(String dataverseRedirectPage, Dataverse dataverseIn) {
         /**
          * These are our decided-upon search/browse rules, the way we expect
          * users to search/browse and how we want the app behave:
@@ -206,7 +210,8 @@ public class SearchIncludeFragment implements java.io.Serializable {
          * selections and what page you are on should be preserved.
          *
          */
-
+        
+        dataverse = dataverseIn;
         dataverseRedirectPage = StringUtils.isBlank(dataverseRedirectPage) ? "dataverse.xhtml" : dataverseRedirectPage;
         String optionalDataverseScope = "&alias=" + dataverse.getAlias();
 
@@ -444,6 +449,16 @@ public class SearchIncludeFragment implements java.io.Serializable {
             }
             
             setDisplayCardValues();
+            
+            dataversePage.setQuery(query);
+            dataversePage.setFacetCategoryList(facetCategoryList);
+            dataversePage.setFilterQueries(filterQueries);
+            dataversePage.setSearchResultsCount(searchResultsCount);
+            dataversePage.setSelectedTypesString(selectedTypesString);
+            dataversePage.setSortField(sortField);
+            dataversePage.setSortOrder(sortField);
+            dataversePage.setSearchFieldType(searchFieldType);
+            dataversePage.setSearchFieldSubtree(searchFieldSubtree);
 
         } else {
             // if SOLR is down:
@@ -516,12 +531,17 @@ public class SearchIncludeFragment implements java.io.Serializable {
     }
 
     public int getNumberOfFacets(String name, int defaultValue) {
-        Integer numFacets = numberOfFacets.get(name);
+        if (adjustFacetName != null && adjustFacetName.equals(name)) {
+            return adjustFacetNumber; 
+        }
+        
+        return defaultValue;
+        /*Integer numFacets = numberOfFacets.get(name);
         if (numFacets == null) {
             numberOfFacets.put(name, defaultValue);
             numFacets = defaultValue;
         }
-        return numFacets;
+        return numFacets;*/
     }
 
     public void incrementFacets(String name, int incrementNum) {
@@ -842,6 +862,22 @@ public class SearchIncludeFragment implements java.io.Serializable {
                 this.sortOrder = SortOrder.desc;
             }
         }
+    }
+    
+    public String getAdjustFacetName() {
+        return adjustFacetName;
+    }
+    
+    public void setAdjustFacetName(String adjustFacetName) {
+        this.adjustFacetName = adjustFacetName;
+    }
+    
+    public int getAdjustFacetNumber() {
+        return adjustFacetNumber;
+    }
+    
+    public void setAdjustFacetNumber(int adjustFacetNumber) {
+        this.adjustFacetNumber = adjustFacetNumber; 
     }
 
     /**

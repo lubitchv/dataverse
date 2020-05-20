@@ -2,6 +2,7 @@ package edu.harvard.iq.dataverse.util;
 
 import com.ocpsoft.pretty.PrettyContext;
 import edu.harvard.iq.dataverse.DataFile;
+import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.DataverseServiceBean;
 import edu.harvard.iq.dataverse.authorization.AuthenticationServiceBean;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinAuthenticationProvider;
@@ -539,14 +540,10 @@ public class SystemConfig {
         return settingsService.isTrueForKey(SettingsServiceBean.Key.FilesOnDatasetPageFromSolr, safeDefaultIfKeyNotFound);
     }
 
-    public Long getMaxFileUploadSize(){
-         return settingsService.getValueForKeyAsLong(SettingsServiceBean.Key.MaxFileUploadSizeInBytes);
+    public Long getMaxFileUploadSizeForStore(String driverId){
+         return settingsService.getValueForCompoundKeyAsLong(SettingsServiceBean.Key.MaxFileUploadSizeInBytes, driverId);
      }
     
-    public String getHumanMaxFileUploadSize(){
-         return bytesToHumanReadable(getMaxFileUploadSize());
-     }
-
     public Integer getSearchHighlightFragmentSize() {
         String fragSize = settingsService.getValueForKey(SettingsServiceBean.Key.SearchHighlightFragmentSize);
         if (fragSize != null) {
@@ -862,7 +859,7 @@ public class SystemConfig {
     /**
      * See FileUploadMethods.
      *
-     * TODO: Consider if dataverse.files.s3-download-redirect belongs here since
+     * TODO: Consider if dataverse.files.<id>.download-redirect belongs here since
      * it's a way to bypass Glassfish when downloading.
      */
     public enum FileDownloadMethods {
@@ -1046,4 +1043,13 @@ public class SystemConfig {
         String mDCLogPath = settingsService.getValueForKey(SettingsServiceBean.Key.MDCLogPath, null);
         return mDCLogPath;
     }
+    
+    public boolean isDatafileValidationOnPublishEnabled() {
+        boolean safeDefaultIfKeyNotFound = true;
+        return settingsService.isTrueForKey(SettingsServiceBean.Key.FileValidationOnPublishEnabled, safeDefaultIfKeyNotFound);
+    }
+
+	public boolean directUploadEnabled(Dataset dataset) {
+    	return Boolean.getBoolean("dataverse.files." + dataset.getDataverseContext().getEffectiveStorageDriverId() + ".upload-redirect");
+	}
 }

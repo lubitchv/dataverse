@@ -20,10 +20,13 @@ import edu.harvard.iq.dataverse.engine.command.impl.LinkDataverseCommand;
 import edu.harvard.iq.dataverse.search.SearchException;
 import edu.harvard.iq.dataverse.search.SearchFields;
 import edu.harvard.iq.dataverse.search.SortBy;
+import edu.harvard.iq.dataverse.util.SystemConfig;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.ejb.EJB;
+import javax.ejb.Schedule;
 import javax.ejb.Stateless;
 import javax.inject.Named;
 import javax.json.Json;
@@ -52,6 +55,8 @@ public class SavedSearchServiceBean {
     DataverseLinkingServiceBean dataverseLinkingService;
     @EJB
     EjbDataverseEngine commandEngine;
+    @EJB
+    SystemConfig systemConfig;
 
     private final String resultString = "result";
 
@@ -122,6 +127,19 @@ public class SavedSearchServiceBean {
             return em.merge(savedSearch);
         }
     }
+    
+    
+    @Schedule(dayOfWeek="0", hour="0",minute="30")
+    public void makeLinksForAllSavedSearchesTimer() {
+        if (systemConfig.isTimerServer()) {
+            logger.info("Linking saved searches");
+            try {
+                JsonObjectBuilder makeLinksForAllSavedSearches = makeLinksForAllSavedSearches(false);
+            } catch (SearchException | CommandException ex) {
+                Logger.getLogger(SavedSearchServiceBean.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+    }
 
     public JsonObjectBuilder makeLinksForAllSavedSearches(boolean debugFlag) throws SearchException, CommandException {
         JsonObjectBuilder response = Json.createObjectBuilder();
@@ -189,7 +207,10 @@ public class SavedSearchServiceBean {
                     hitInfo.add(resultString, "Skipping because dataset " + datasetToLinkTo.getId() + " is already part of the subtree for " + savedSearch.getDefinitionPoint().getAlias());
                 } else if (datasetAncestorAlreadyLinked(savedSearch.getDefinitionPoint(), datasetToLinkTo)) {
                     hitInfo.add(resultString, "FIXME: implement this?");
-                } else {
+                } else if (!datasetToLinkTo.isReleased()) {
+                    hitInfo.add(resultString, "Skipping because dataset " + datasetToLinkTo.getId() + " is not released " );
+                }
+                else {
                     DatasetLinkingDataverse link = commandEngine.submitInNewTransaction(new LinkDatasetCommand(dvReq, savedSearch.getDefinitionPoint(), datasetToLinkTo));
                     hitInfo.add(resultString, "Persisted DatasetLinkingDataverse id " + link.getId() + " link of " + link.getDataset() + " to " + link.getLinkingDataverse());
                 }

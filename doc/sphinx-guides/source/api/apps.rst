@@ -1,7 +1,7 @@
 Apps
 ====
 
-The introduction of Dataverse APIs has fostered the development of a variety of software applications that are listed in the :doc:`/admin/integrations`, :doc:`/admin/external-tools`, and :doc:`/admin/reporting-tools` sections of the Admin Guide.
+The introduction of Dataverse APIs has fostered the development of a variety of software applications that are listed in the :doc:`/admin/integrations`, :doc:`/admin/external-tools`, and :doc:`/admin/reporting-tools-and-queries` sections of the Admin Guide.
 
 The apps below are open source and demonstrate how to use Dataverse APIs. Some of these apps are built on :doc:`/api/client-libraries` that are available for Dataverse APIs in Python, Javascript, R, and Java.
 
@@ -30,7 +30,7 @@ File Previewers
 
 File Previewers are tools that display the content of files - including audio, html, Hypothes.is annotations, images, PDF, text, video - allowing them to be viewed without downloading.
 
-https://github.com/QualitativeDataRepository/dataverse-previewers
+https://github.com/GlobalDataverseCommunityConsortium/dataverse-previewers
 
 TwoRavens
 ~~~~~~~~~
@@ -93,6 +93,14 @@ Archivematica is an integrated suite of open-source tools for processing digital
 
 https://github.com/artefactual/archivematica/tree/v1.9.2/src/MCPClient/lib/clientScripts
 
+repo2docker
+~~~~~~~~~~~
+
+repo2docker is a command line tool that allows you to create and start a
+Docker image from a code repository that follows the [reproducible executable environment specification](https://repo2docker.readthedocs.io/en/latest/specification.html). repo2docker supports Dataverse DOIs to find and retrieve datasets.
+
+https://github.com/jupyter/repo2docker/blob/master/repo2docker/contentproviders/dataverse.py
+
 Java
 ----
 
@@ -121,3 +129,10 @@ OJS
 The Open Journal Systems (OJS) Dataverse Plugin adds data sharing and preservation to the OJS publication process.
 
 https://github.com/pkp/ojs/tree/ojs-stable-2_4_8/plugins/generic/dataverse
+
+OpenScholar
+~~~~~~~~~~~
+
+The Dataverse module from OpenScholar allows Dataverse widgets to be easily embedded in its web pages:
+
+https://github.com/openscholar/openscholar/tree/SCHOLAR-3.x/openscholar/modules/os_features/os_dataverse

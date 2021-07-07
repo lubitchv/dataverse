@@ -23,6 +23,8 @@ import edu.harvard.iq.dataverse.dataaccess.DataAccess;
 import edu.harvard.iq.dataverse.dataaccess.DataAccessRequest;
 import edu.harvard.iq.dataverse.dataaccess.StorageIO;
 import edu.harvard.iq.dataverse.datavariable.DataVariable;
+import edu.harvard.iq.dataverse.datavariable.VariableMetadataUtil;
+import edu.harvard.iq.dataverse.datavariable.VariableServiceBean;
 import edu.harvard.iq.dataverse.harvest.client.HarvestingClient;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 import edu.harvard.iq.dataverse.util.FileUtil;
@@ -31,7 +33,6 @@ import edu.harvard.iq.dataverse.util.SystemConfig;
 import java.io.IOException;
 import java.io.InputStream;
 import java.sql.Timestamp;
-import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -54,13 +55,13 @@ import javax.ejb.EJBException;
 import javax.ejb.Stateless;
 import javax.ejb.TransactionAttribute;
 import static javax.ejb.TransactionAttributeType.REQUIRES_NEW;
-import javax.inject.Inject;
 import javax.inject.Named;
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
 import org.apache.commons.lang.StringUtils;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.SolrQuery.SortClause;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.response.QueryResponse;
@@ -68,6 +69,7 @@ import org.apache.solr.client.solrj.response.UpdateResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.SolrInputDocument;
+import org.apache.solr.common.params.CursorMarkParams;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.io.IOUtils;
 import org.apache.tika.metadata.Metadata;
@@ -111,6 +113,12 @@ public class IndexServiceBean {
     @EJB
     SolrClientService solrClientService;
 
+    @EJB
+    VariableServiceBean variableService;
+    
+    @EJB
+    IndexBatchServiceBean indexBatchService;
+
     public static final String solrDocIdentifierDataverse = "dataverse_";
     public static final String solrDocIdentifierFile = "datafile_";
     public static final String solrDocIdentifierDataset = "dataset_";
@@ -131,6 +139,8 @@ public class IndexServiceBean {
     private Dataverse rootDataverseCached;
     private SolrClient solrServer;
 
+    private VariableMetadataUtil variableMetadataUtil;
+
     @PostConstruct
     public void init() {
         String urlString = "http://" + systemConfig.getSolrHostColonPort() + "/solr/collection1";
@@ -150,13 +160,17 @@ public class IndexServiceBean {
             solrServer = null;
         }
     }
-    
+   
     @TransactionAttribute(REQUIRES_NEW)
     public Future<String> indexDataverseInNewTransaction(Dataverse dataverse) throws SolrServerException, IOException{
-        return indexDataverse(dataverse);
+        return indexDataverse(dataverse, false);
+    }
+    
+    public Future<String> indexDataverse(Dataverse dataverse) throws SolrServerException, IOException {
+       return  indexDataverse(dataverse, true);
     }
 
-    public Future<String> indexDataverse(Dataverse dataverse) throws SolrServerException, IOException {
+    public Future<String> indexDataverse(Dataverse dataverse, boolean processPaths) throws SolrServerException, IOException {
         logger.fine("indexDataverse called on dataverse id " + dataverse.getId() + "(" + dataverse.getAlias() + ")");
         if (dataverse.getId() == null) {
             // TODO: Investigate the root cause of this "unable to index dataverse"
@@ -244,15 +258,30 @@ public class IndexServiceBean {
             // logger.info(dataverse.getName() + " size " + dataversePaths.size());
             dataversePaths.remove(dataversePaths.size() - 1);
         }
-        // Add paths for linking dataverses
-        for (Dataverse linkingDataverse : dvLinkingService.findLinkingDataverses(dataverse.getId())) {
-            List<String> linkingDataversePathSegmentsAccumulator = new ArrayList<>();
-            List<String> linkingdataverseSegments = findPathSegments(linkingDataverse, linkingDataversePathSegmentsAccumulator);
-            List<String> linkingDataversePaths = getDataversePathsFromSegments(linkingdataverseSegments);
-            for (String dvPath : linkingDataversePaths) {
-                dataversePaths.add(dvPath);
+
+        //Add paths for my linking dataverses
+        List<String> linkingDataversePaths = findLinkingDataversePaths(dataverse);
+        for (String dvPath : linkingDataversePaths) {
+            dataversePaths.add(dvPath);
+        }
+        //only do this if we're indexing an individual dataverse ie not full re-index
+        List<Long> dataverseChildrenIds = new ArrayList();
+        List<Long> datasetChildrenIds = new ArrayList();
+        if (processPaths) {
+            //Get Linking Dataverses to see if I need to reindex my children
+            if (hasAnyLinkingDataverses(dataverse)) {
+                dataverseChildrenIds = dataverseService.findAllDataverseDataverseChildren(dataverse.getId());
+                datasetChildrenIds = dataverseService.findAllDataverseDatasetChildren(dataverse.getId());
+                for (Long id : datasetChildrenIds) {
+                    updatePathForExistingSolrDocs(datasetService.find(id));
+                }
+
+                for (Long id : dataverseChildrenIds) {
+                    updatePathForExistingSolrDocs(dataverseService.find(id));
+                }
             }
         }
+        
         solrInputDocument.addField(SearchFields.SUBTREE, dataversePaths);
         docs.add(solrInputDocument);
 
@@ -282,7 +311,7 @@ public class IndexServiceBean {
         return new AsyncResult<>(msg);
 
     }
-
+    
     @TransactionAttribute(REQUIRES_NEW)
     public Future<String> indexDatasetInNewTransaction(Long datasetId) throws  SolrServerException, IOException{ //Dataset dataset) {
         boolean doNormalSolrDocCleanUp = false;
@@ -674,23 +703,7 @@ public class IndexServiceBean {
         Dataset dataset = indexableDataset.getDatasetVersion().getDataset();
         logger.fine("adding or updating Solr document for dataset id " + dataset.getId());
         Collection<SolrInputDocument> docs = new ArrayList<>();
-        List<String> dataversePathSegmentsAccumulator = new ArrayList<>();
-        List<String> dataverseSegments = new ArrayList<>();
-        try {
-            dataverseSegments = findPathSegments(dataset.getOwner(), dataversePathSegmentsAccumulator);
-        } catch (Exception ex) {
-            logger.info("failed to find dataverseSegments for dataversePaths for " + SearchFields.SUBTREE + ": " + ex);
-        }
-        List<String> dataversePaths = getDataversePathsFromSegments(dataverseSegments);
-        // Add Paths for linking dataverses
-        for (Dataverse linkingDataverse : dsLinkingService.findLinkingDataverses(dataset.getId())) {
-            List<String> linkingDataversePathSegmentsAccumulator = new ArrayList<>();
-            List<String> linkingdataverseSegments = findPathSegments(linkingDataverse, linkingDataversePathSegmentsAccumulator);
-            List<String> linkingDataversePaths = getDataversePathsFromSegments(linkingdataverseSegments);
-            for (String dvPath : linkingDataversePaths) {
-                dataversePaths.add(dvPath);
-            }
-        }
+        
         SolrInputDocument solrInputDocument = new SolrInputDocument();
         String datasetSolrDocId = indexableDataset.getSolrDocId();
         solrInputDocument.addField(SearchFields.ID, datasetSolrDocId);
@@ -870,7 +883,8 @@ public class IndexServiceBean {
                 }
             }
         }
-
+        
+        List<String> dataversePaths = retrieveDVOPaths(dataset); 
         solrInputDocument.addField(SearchFields.SUBTREE, dataversePaths);
         // solrInputDocument.addField(SearchFields.HOST_DATAVERSE,
         // dataset.getOwner().getName());
@@ -902,10 +916,11 @@ public class IndexServiceBean {
                 logger.fine(
                         "We are indexing a draft version of a dataset that has a released version. We'll be checking file metadatas if they are exact clones of the released versions.");
             }
-
             for (FileMetadata fileMetadata : fileMetadatas) {
+                
                 boolean indexThisMetadata = true;
                 if (checkForDuplicateMetadata) {
+                    
                     logger.fine("Checking if this file metadata is a duplicate.");
                     for (FileMetadata releasedFileMetadata : dataset.getReleasedVersion().getFileMetadatas()) {
                         if (fileMetadata.getDataFile() != null && fileMetadata.getDataFile().equals(releasedFileMetadata.getDataFile())) {
@@ -918,7 +933,10 @@ public class IndexServiceBean {
                              * whether full text indexing is on now.
                              */
                             if ((fileMetadata.getDataFile().isRestricted() == releasedFileMetadata.getDataFile().isRestricted())) {
-                                if (fileMetadata.contentEquals(releasedFileMetadata)) {
+                                if (fileMetadata.contentEquals(releasedFileMetadata)
+                                     /* SEK 3/12/2020 remove variable metadata indexing*/
+                                     //   && variableMetadataUtil.compareVariableMetadata(releasedFileMetadata,fileMetadata)
+                                        ) {
                                     indexThisMetadata = false;
                                     logger.fine("This file metadata hasn't changed since the released version; skipping indexing.");
                                 } else {
@@ -932,6 +950,8 @@ public class IndexServiceBean {
                     }
                 }
                 if (indexThisMetadata) {
+                    
+
                     SolrInputDocument datafileSolrInputDocument = new SolrInputDocument();
                     Long fileEntityId = fileMetadata.getDataFile().getId();
                     datafileSolrInputDocument.addField(SearchFields.ENTITY_ID, fileEntityId);
@@ -1145,13 +1165,48 @@ public class IndexServiceBean {
                             // is something social science-specific...
                             // anyway -- needs to be reviewed. -- L.A. 4.0alpha1
 
+                            //Variable Name
                             if (var.getName() != null && !var.getName().equals("")) {
                                 datafileSolrInputDocument.addField(SearchFields.VARIABLE_NAME, var.getName());
                             }
-                            if (var.getLabel() != null && !var.getLabel().equals("")) {
-                                datafileSolrInputDocument.addField(SearchFields.VARIABLE_LABEL, var.getLabel());
+
+/* SEK 3/12/2020 remove variable metadata indexing
+                            List<VariableMetadata> vmList = variableService.findByDataVarIdAndFileMetaId(var.getId(), fileMetadata.getId());
+                            VariableMetadata vm = null;
+                            if (vmList != null && vmList.size() >0) {
+                                vm = vmList.get(0);
                             }
+
+                            if (vmList.size() == 0 ) {
+                                //Variable Label
+                                if (var.getLabel() != null && !var.getLabel().equals("")) {
+                                    datafileSolrInputDocument.addField(SearchFields.VARIABLE_LABEL, var.getLabel());
+                                }
+
+                            } else if (vm != null) {
+                                if (vm.getLabel() != null && !vm.getLabel().equals("")  ) {
+                                    datafileSolrInputDocument.addField(SearchFields.VARIABLE_LABEL, vm.getLabel());
+                                }
+                                if (vm.getLiteralquestion() != null && !vm.getLiteralquestion().equals("")) {
+                                    datafileSolrInputDocument.addField(SearchFields.LITERAL_QUESTION, vm.getLiteralquestion());
+                                }
+                                if (vm.getInterviewinstruction() != null && !vm.getInterviewinstruction().equals("")) {
+                                    datafileSolrInputDocument.addField(SearchFields.INTERVIEW_INSTRUCTIONS, vm.getInterviewinstruction());
+                                }
+                                if (vm.getPostquestion() != null && !vm.getPostquestion().equals("")) {
+                                    datafileSolrInputDocument.addField(SearchFields.POST_QUESTION, vm.getPostquestion());
+                                }
+                                if (vm.getUniverse() != null && !vm.getUniverse().equals("")) {
+                                    datafileSolrInputDocument.addField(SearchFields.VARIABLE_UNIVERSE, vm.getUniverse());
+                                }
+                                if (vm.getNotes() != null && !vm.getNotes().equals("")) {
+                                    datafileSolrInputDocument.addField(SearchFields.VARIABLE_NOTES, vm.getNotes());
+                                }
+
+                            }
+*/
                         }
+                        
                         // TABULAR DATA TAGS:
                         // (not to be confused with the file categories, indexed above!)
                         for (DataFileTag tag : fileMetadata.getDataFile().getTags()) {
@@ -1167,7 +1222,7 @@ public class IndexServiceBean {
                 }
             }
         }
-
+        
         try {
             solrClientService.getSolrClient().add(docs);
             solrClientService.getSolrClient().commit();
@@ -1190,8 +1245,6 @@ public class IndexServiceBean {
         dvObjectToModify = em.merge(dvObjectToModify);
         dvObjectToModify = null;
 
-        // return "indexed dataset " + dataset.getId() + " as " + solrDocId +
-        // "\nindexFilesResults for " + solrDocId + ":" + fileInfo.toString();
         return "indexed dataset " + dsId + " as " + datasetSolrDocId + ". filesIndexed: " + filesIndexed;
     }
 
@@ -1225,11 +1278,18 @@ public class IndexServiceBean {
     }
 
     public List<String> findPathSegments(Dataverse dataverse, List<String> segments) {
+        return findPathSegments(dataverse, segments, null);
+    }
+
+    public List<String> findPathSegments(Dataverse dataverse, List<String> segments, Dataverse topOfPath) {
         Dataverse rootDataverse = findRootDataverseCached();
+        if (topOfPath == null) {
+            topOfPath = rootDataverse;
+        }
         if (!dataverse.equals(rootDataverse)) {
             // important when creating root dataverse
             if (dataverse.getOwner() != null) {
-                findPathSegments(dataverse.getOwner(), segments);
+                findPathSegments(dataverse.getOwner(), segments, topOfPath);
             }
             segments.add(dataverse.getId().toString());
             return segments;
@@ -1238,8 +1298,53 @@ public class IndexServiceBean {
             return segments;
         }
     }
+        
+    private boolean hasAnyLinkingDataverses(Dataverse dataverse) {
+        Dataverse rootDataverse = findRootDataverseCached();
+        List<Dataverse> ancestorList = dataverse.getOwners();
+        ancestorList.add(dataverse);
+        for (Dataverse prior : ancestorList) {
+            if (!dataverse.equals(rootDataverse)) {
+                List<Dataverse> linkingDVs = dvLinkingService.findLinkingDataverses(prior.getId());
+                if (!linkingDVs.isEmpty()){
+                    return true;
+                }
+            }
+        }       
+        return false;
+    }
+    
+    private List<String> findLinkingDataversePaths(Dataverse dataverse) {
+        Dataverse rootDataverse = findRootDataverseCached();
+        List<String> pathListAccumulator = new ArrayList<>();
+        List<Dataverse> ancestorList = dataverse.getOwners();
 
-    List<String> getDataversePathsFromSegments(List<String> dataversePathSegments) {
+        ancestorList.add(dataverse);
+
+        for (Dataverse prior : ancestorList) {
+            if (!dataverse.equals(rootDataverse)) {
+                // important when creating root dataverse
+                List<Dataverse> linkingDVs = dvLinkingService.findLinkingDataverses(prior.getId());
+                for (Dataverse toAdd : linkingDVs) {
+                    List<String> linkingDataversePathSegmentsAccumulator = new ArrayList<>();
+                    //path starts with linking dataverse
+                    linkingDataversePathSegmentsAccumulator.add(toAdd.getId().toString());
+                    //then add segments from the target dataverse up to the linked dataverse
+                    List<String> linkingdataverseSegments = findPathSegments(dataverse, linkingDataversePathSegmentsAccumulator, prior);
+
+                    List<String> linkingDataversePaths = getDataversePathsFromSegments(linkingdataverseSegments);
+                    for (String dvPath : linkingDataversePaths) {
+                        pathListAccumulator.add(dvPath);
+                    }
+                }
+            }
+        }
+
+        return pathListAccumulator;
+
+    }
+
+    private List<String> getDataversePathsFromSegments(List<String> dataversePathSegments) {
         List<String> subtrees = new ArrayList<>();
         for (int i = 0; i < dataversePathSegments.size(); i++) {
             StringBuilder pathBuilder = new StringBuilder();
@@ -1303,6 +1408,98 @@ public class IndexServiceBean {
 
     public static String getDEACCESSIONED_STRING() {
         return DEACCESSIONED_STRING;
+    }
+    
+    
+    
+    private void updatePathForExistingSolrDocs(DvObject object) throws SolrServerException, IOException {
+        SolrQuery solrQuery = new SolrQuery();
+        solrQuery.setQuery(SearchUtil.constructQuery(SearchFields.ENTITY_ID, object.getId().toString()));
+
+        QueryResponse res = solrClientService.getSolrClient().query(solrQuery);
+        
+        if (!res.getResults().isEmpty()) {            
+            SolrDocument doc = res.getResults().get(0);
+            SolrInputDocument sid = new SolrInputDocument();
+
+            for (String fieldName : doc.getFieldNames()) {
+                sid.addField(fieldName, doc.getFieldValue(fieldName));
+            }
+
+            List<String> paths =  object.isInstanceofDataset() ? retrieveDVOPaths(datasetService.find(object.getId())) 
+                    : retrieveDVOPaths(dataverseService.find(object.getId()));
+  
+            sid.removeField(SearchFields.SUBTREE);
+            sid.addField(SearchFields.SUBTREE, paths);
+            UpdateResponse addResponse = solrClientService.getSolrClient().add(sid);
+            UpdateResponse commitResponse = solrClientService.getSolrClient().commit();
+            if (object.isInstanceofDataset()) {
+                for (DataFile df : datasetService.find(object.getId()).getFiles()) {
+                    solrQuery.setQuery(SearchUtil.constructQuery(SearchFields.ENTITY_ID, df.getId().toString()));
+                    res = solrClientService.getSolrClient().query(solrQuery);
+                    if (!res.getResults().isEmpty()) {
+                        doc = res.getResults().get(0);
+                        sid = new SolrInputDocument();
+                        for (String fieldName : doc.getFieldNames()) {
+                            sid.addField(fieldName, doc.getFieldValue(fieldName));
+                        }
+                        sid.removeField(SearchFields.SUBTREE);
+                        sid.addField(SearchFields.SUBTREE, paths);
+                        addResponse = solrClientService.getSolrClient().add(sid);
+                        commitResponse = solrClientService.getSolrClient().commit();
+                    }
+                }
+            }
+        }            
+    }
+    
+    
+    private List<String> retrieveDVOPaths(DvObject dvo) {
+        List<String> dataversePathSegmentsAccumulator = new ArrayList<>();
+        List<String> dataverseSegments = new ArrayList<>();
+        Dataset dataset = null;
+        Dataverse dv = null;
+        try {
+            if(dvo.isInstanceofDataset()){
+                dataset = (Dataset) dvo;
+                dataverseSegments = findPathSegments(dataset.getOwner(), dataversePathSegmentsAccumulator);
+            }
+            if(dvo.isInstanceofDataverse()){
+                dv = (Dataverse) dvo;
+                dataverseSegments = findPathSegments(dv, dataversePathSegmentsAccumulator);
+            }
+        } catch (Exception ex) {
+            logger.info("failed to find dataverseSegments for dataversePaths for " + SearchFields.SUBTREE + ": " + ex);
+        }
+        List<String> dataversePaths = getDataversePathsFromSegments(dataverseSegments);
+        // Add Paths for linking dataverses
+        List <Dataverse>linkingDataverses = new ArrayList();
+        if (dataset != null){
+            linkingDataverses = dsLinkingService.findLinkingDataverses(dataset.getId());
+        } else{
+            linkingDataverses = dvLinkingService.findLinkingDataverses(dv.getId());
+        }
+        for (Dataverse linkingDataverse : linkingDataverses) {
+            List<String> linkingDataversePathSegmentsAccumulator = new ArrayList<>();
+            List<String> linkingdataverseSegments = findPathSegments(linkingDataverse, linkingDataversePathSegmentsAccumulator);
+            List<String> linkingDataversePaths = getDataversePathsFromSegments(linkingdataverseSegments);
+            for (String dvPath : linkingDataversePaths) {
+                dataversePaths.add(dvPath);
+            }
+        }
+
+        //Add paths for my linking dataverses
+        List<String> linkingDataversePaths = new ArrayList();
+        if (dataset != null) {
+            linkingDataversePaths = findLinkingDataversePaths(dataset.getOwner());          
+        } else {
+            linkingDataversePaths = findLinkingDataversePaths(dv);
+        }
+
+        for (String dvPath : linkingDataversePaths) {
+            dataversePaths.add(dvPath);
+        }
+        return dataversePaths;
     }
 
     public String delete(Dataverse doomed) {
@@ -1463,46 +1660,28 @@ public class IndexServiceBean {
     /**
      * @return Dataverses that should be reindexed either because they have
      * never been indexed or their index time is before their modification time.
+     * (Exclude root because it is never indexed)
      */
-    public List<Dataverse> findStaleOrMissingDataverses() {
-        List<Dataverse> staleDataverses = new ArrayList<>();
-        for (Dataverse dataverse : dataverseService.findAll()) {
-            if (dataverse.equals(dataverseService.findRootDataverse())) {
-                continue;
-            }
-            if (stale(dataverse)) {
-                staleDataverses.add(dataverse);
-            }
-        }
-        return staleDataverses;
+    public List<Long> findStaleOrMissingDataverses() {
+        List<Long> staleDataverseIds = dataverseService.findIdStale();
+        Long rootId = dataverseService.findRootDataverse().getId();
+        List<Long> ids = new ArrayList<>();
+        staleDataverseIds.stream().filter(id -> (!id.equals(rootId))).forEachOrdered(id -> {
+            ids.add(id);
+        });
+        return ids;
     }
 
     /**
      * @return Datasets that should be reindexed either because they have never
      * been indexed or their index time is before their modification time.
      */
-    public List<Dataset> findStaleOrMissingDatasets() {
-        List<Dataset> staleDatasets = new ArrayList<>();
-        for (Dataset dataset : datasetService.findAll()) {
-            if (stale(dataset)) {
-                staleDatasets.add(dataset);
-            }
-        }
-        return staleDatasets;
+    public List<Long> findStaleOrMissingDatasets() {
+        return datasetService.findIdStale();
     }
 
-    private boolean stale(DvObject dvObject) {
-        Timestamp indexTime = dvObject.getIndexTime();
-        Timestamp modificationTime = dvObject.getModificationTime();
-        if (indexTime == null) {
-            return true;
-        } else if (indexTime.before(modificationTime)) {
-            return true;
-        }
-        return false;
-    }
-
-    public List<Long> findDataversesInSolrOnly() throws SearchException {
+  
+    public List<String> findDataversesInSolrOnly() throws SearchException {
         try {
             /**
              * @todo define this centrally and statically
@@ -1513,7 +1692,7 @@ public class IndexServiceBean {
         }
     }
 
-    public List<Long> findDatasetsInSolrOnly() throws SearchException {
+    public List<String> findDatasetsInSolrOnly() throws SearchException {
         try {
             /**
              * @todo define this centrally and statically
@@ -1524,7 +1703,7 @@ public class IndexServiceBean {
         }
     }
 
-    public List<Long> findFilesInSolrOnly() throws SearchException {
+    public List<String> findFilesInSolrOnly() throws SearchException {
         try {
             /**
              * @todo define this centrally and statically
@@ -1534,34 +1713,82 @@ public class IndexServiceBean {
             throw ex;
         }
     }
-
-    private List<Long> findDvObjectInSolrOnly(String type) throws SearchException {
-        SolrQuery solrQuery = new SolrQuery();
-        solrQuery.setQuery("*");
-        solrQuery.setRows(Integer.MAX_VALUE);
-        solrQuery.addFilterQuery(SearchFields.TYPE + ":" + type);
-        List<Long> dvObjectInSolrOnly = new ArrayList<>();
-        QueryResponse queryResponse = null;
+    /**
+     * Finds permissions documents in Solr that don't have corresponding dvObjects
+     * in the database, and returns a list of their Solr "id" field.
+     * @return list of "id" field vales for the orphaned Solr permission documents
+     * @throws SearchException 
+     */
+    public List<String> findPermissionsInSolrOnly() throws SearchException {
+        List<String> permissionInSolrOnly = new ArrayList<>();
         try {
-            queryResponse = solrClientService.getSolrClient().query(solrQuery);
-        } catch (SolrServerException | IOException ex) {
-            throw new SearchException("Error searching Solr for " + type, ex);
-        }
-        SolrDocumentList results = queryResponse.getResults();
-        for (SolrDocument solrDocument : results) {
-            Object idObject = solrDocument.getFieldValue(SearchFields.ENTITY_ID);
-            if (idObject != null) {
-                try {
-                    long id = (Long) idObject;
-                    DvObject dvobject = dvObjectService.findDvObject(id);
-                    if (dvobject == null) {
-                        dvObjectInSolrOnly.add(id);
+            int rows = 100;
+            SolrQuery q = (new SolrQuery(SearchFields.DEFINITION_POINT_DVOBJECT_ID+":*")).setRows(rows).setSort(SortClause.asc(SearchFields.ID));
+            String cursorMark = CursorMarkParams.CURSOR_MARK_START;
+            boolean done = false;
+            while (!done) {
+                q.set(CursorMarkParams.CURSOR_MARK_PARAM, cursorMark);
+                QueryResponse rsp = solrServer.query(q);
+                String nextCursorMark = rsp.getNextCursorMark();
+                SolrDocumentList list = rsp.getResults();
+                for (SolrDocument doc: list) {
+                    long id = Long.parseLong((String) doc.getFieldValue(SearchFields.DEFINITION_POINT_DVOBJECT_ID));
+                    if(!dvObjectService.checkExists(id)) {
+                        permissionInSolrOnly.add((String)doc.getFieldValue(SearchFields.ID));
                     }
-                } catch (ClassCastException ex) {
-                    throw new SearchException("Found " + SearchFields.ENTITY_ID + " but error casting " + idObject + " to long", ex);
+                }
+                if (cursorMark.equals(nextCursorMark)) {
+                    done = true;
+                }
+                cursorMark = nextCursorMark;
+            }
+        } catch (SolrServerException | IOException ex) {
+           throw new SearchException("Error searching Solr for permissions" , ex);
+ 
+        }
+        return permissionInSolrOnly;
+    }
+    
+    private List<String> findDvObjectInSolrOnly(String type) throws SearchException {
+        SolrQuery solrQuery = new SolrQuery();
+        int rows = 100;
+     
+        solrQuery.setQuery("*").setRows(rows).setSort(SortClause.asc(SearchFields.ID));
+        solrQuery.addFilterQuery(SearchFields.TYPE + ":" + type);
+        List<String> dvObjectInSolrOnly = new ArrayList<>();
+       
+        String cursorMark = CursorMarkParams.CURSOR_MARK_START;
+        boolean done = false;
+        while (!done) {
+            solrQuery.set(CursorMarkParams.CURSOR_MARK_PARAM, cursorMark);
+            QueryResponse rsp = null;
+            try {
+                rsp = solrServer.query(solrQuery);
+             } catch (SolrServerException | IOException ex) {
+                throw new SearchException("Error searching Solr type: " + type, ex);
+
+            }
+            String nextCursorMark = rsp.getNextCursorMark();
+            SolrDocumentList list = rsp.getResults();
+            for (SolrDocument doc: list) {
+                Object idObject = doc.getFieldValue(SearchFields.ENTITY_ID);
+                if (idObject != null) {
+                    try {
+                        long id = (Long) idObject;
+                        if (!dvObjectService.checkExists(id)) {
+                            dvObjectInSolrOnly.add((String)doc.getFieldValue(SearchFields.ID));
+                        }
+                    } catch (ClassCastException ex) {
+                        throw new SearchException("Found " + SearchFields.ENTITY_ID + " but error casting " + idObject + " to long", ex);
+                    }
                 }
             }
+            if (cursorMark.equals(nextCursorMark)) {
+                done = true;
+            }
+            cursorMark = nextCursorMark;
         }
+
         return dvObjectInSolrOnly;
     }
 

@@ -47,7 +47,7 @@ In Dataverse, browsing is the default view when a user hasn't begun a search on 
 Saved Search
 ------------
 
-Saved Search is currently an experimental feature only available to superusers. Please see the :doc:`/api/native-api` section of the API Guide for more information.
+Saved Search is currently an experimental feature only available to superusers. Please see :ref:`saved-search` in the API Guide for more information.
 
 Using Data
 ==========
@@ -62,7 +62,11 @@ Once on a dataset page, you will see the title, citation, description, and sever
 View Files
 ----------
 
-Files in Dataverse each have their own page that can be reached through the search results or through the Files table on their parent dataset's page. The dataset page and file page offer much the same functionality in terms of viewing and editing files, with a few small exceptions. The file page includes the file's persistent identifier (DOI or handle), which can be found under the Metadata tab. Also, the file page's Versions tab gives you a version history that is more focused on the individual file rather than the dataset as a whole. 
+Files in Dataverse each have their own landing page that can be reached through the search results or through the Files table on their parent dataset's page. The dataset page and file page offer much the same functionality in terms of viewing and editing files, with a few small exceptions. 
+
+- In installations that have enabled support for persistent identifers (PIDs) at the file level, the file page includes the file's DOI or handle, which can be found in the file citation and also under the Metadata tab.
+- Previewers for several common file types are available and can be added by installation administrators.
+- The file page's Versions tab gives you a version history that is more focused on the individual file rather than the dataset as a whole. 
 
 File Search within Datasets
 ---------------------------
@@ -89,10 +93,14 @@ You can find the citation for the dataset at the top of the dataset page in a bl
 
 .. _download_files:
 
+In installations that have added file-level citations, you can find and download the file's citation on the file page in a similar manner.
+
 Download Files
 --------------
 
-Within the Files tab on a dataset page, you can download the files in that dataset. To download more than one file at a time, select the files you would like to download and then click the Download button above the files. The selected files will download in .zip format that preserves any folder structure that the dataset owner had set up.
+If you want to download all files in a dataset, you can click the Access Dataset dropdown on the dataset page and select one of the download options. The dataset's files will download in .zip format and will preserve any folder structure that the dataset owner had set up. 
+
+If you'd like to download a single file or some subset of the dataset's files, you can use the Files tab. To download more than one file at a time, select the files you would like to download and then click the Download button above the files. The dataset's files will download in .zip format and will preserve any folder structure that the dataset owner had set up.
 
 You may also download a file from its file page by clicking the Download button in the upper right corner of the page, or by :ref:`url_download` under the Metadata tab on the lower half of the page.
 
@@ -110,9 +118,6 @@ Ingested files can be downloaded in several different ways.
 - Rdata format if the instalation has configured this
 
 - The variable metadata for the file in DDI format
-
-- A subset of the columns of the data
-
 
 .. _url_download:
 

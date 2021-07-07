@@ -29,6 +29,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.ejb.EJB;
 import javax.ejb.Stateless;
+import javax.ejb.TransactionAttribute;
+import javax.ejb.TransactionAttributeType;
 import javax.inject.Named;
 import javax.persistence.EntityManager;
 import javax.persistence.NoResultException;
@@ -576,7 +578,7 @@ public class DataFileServiceBean implements java.io.Serializable {
         
         int i = 0; 
         
-        List<Object[]> dataTableResults = em.createNativeQuery("SELECT t0.ID, t0.DATAFILE_ID, t0.UNF, t0.CASEQUANTITY, t0.VARQUANTITY, t0.ORIGINALFILEFORMAT, t0.ORIGINALFILESIZE FROM dataTable t0, dataFile t1, dvObject t2 WHERE ((t0.DATAFILE_ID = t1.ID) AND (t1.ID = t2.ID) AND (t2.OWNER_ID = " + owner.getId() + ")) ORDER BY t0.ID").getResultList();
+        List<Object[]> dataTableResults = em.createNativeQuery("SELECT t0.ID, t0.DATAFILE_ID, t0.UNF, t0.CASEQUANTITY, t0.VARQUANTITY, t0.ORIGINALFILEFORMAT, t0.ORIGINALFILESIZE, t0.ORIGINALFILENAME FROM dataTable t0, dataFile t1, dvObject t2 WHERE ((t0.DATAFILE_ID = t1.ID) AND (t1.ID = t2.ID) AND (t2.OWNER_ID = " + owner.getId() + ")) ORDER BY t0.ID").getResultList();
         
         for (Object[] result : dataTableResults) {
             DataTable dataTable = new DataTable(); 
@@ -593,6 +595,8 @@ public class DataFileServiceBean implements java.io.Serializable {
             dataTable.setOriginalFileFormat((String)result[5]);
             
             dataTable.setOriginalFileSize((Long)result[6]);
+            
+            dataTable.setOriginalFileName((String)result[7]);
             
             dataTables.add(dataTable);
             datatableMap.put(fileId, i++);
@@ -854,8 +858,10 @@ public class DataFileServiceBean implements java.io.Serializable {
 
             fileMetadata.setDatasetVersion(version);
             
-            //fileMetadata.setDataFile(dataset.getFiles().get(file_list_id));
+            // Link the FileMetadata object to the DataFile:
             fileMetadata.setDataFile(dataFiles.get(file_list_id));
+            // ... and the DataFile back to the FileMetadata:
+            fileMetadata.getDataFile().getFileMetadatas().add(fileMetadata);
             
             String description = (String) result[2]; 
             
@@ -933,6 +939,17 @@ public class DataFileServiceBean implements java.io.Serializable {
     }
     
     public DataFile save(DataFile dataFile) {
+
+        if (dataFile.isMergeable()) {   
+            DataFile savedDataFile = em.merge(dataFile);
+            return savedDataFile;
+        } else {
+            throw new IllegalArgumentException("This DataFile object has been set to NOT MERGEABLE; please ensure a MERGEABLE object is passed to the save method.");
+        } 
+    }
+    
+    @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
+    public DataFile saveInTransaction(DataFile dataFile) {
 
         if (dataFile.isMergeable()) {   
             DataFile savedDataFile = em.merge(dataFile);
@@ -1565,7 +1582,7 @@ public class DataFileServiceBean implements java.io.Serializable {
             throw new IOException("Attempted to permanently delete a physical file still associated with an existing DvObject "
                     + "(id: " + dataFileId + ", location: " + storageLocation);
         }
-        StorageIO directStorageAccess = DataAccess.getDirectStorageIO(storageLocation);
+        StorageIO<DvObject> directStorageAccess = DataAccess.getDirectStorageIO(storageLocation);
         directStorageAccess.delete();
     }
     

@@ -16,6 +16,7 @@ import edu.harvard.iq.dataverse.DataverseContact;
 import edu.harvard.iq.dataverse.DataverseFacet;
 import edu.harvard.iq.dataverse.DataverseTheme;
 import edu.harvard.iq.dataverse.authorization.DataverseRole;
+import edu.harvard.iq.dataverse.authorization.groups.impl.maildomain.MailDomainGroup;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinUser;
 import edu.harvard.iq.dataverse.FileMetadata;
 import edu.harvard.iq.dataverse.GlobalId;
@@ -33,6 +34,7 @@ import edu.harvard.iq.dataverse.authorization.groups.impl.shib.ShibGroup;
 import edu.harvard.iq.dataverse.authorization.providers.AuthenticationProviderRow;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import edu.harvard.iq.dataverse.authorization.users.User;
+import edu.harvard.iq.dataverse.dataaccess.DataAccess;
 import edu.harvard.iq.dataverse.privateurl.PrivateUrl;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 import edu.harvard.iq.dataverse.util.DatasetFieldWalker;
@@ -184,6 +186,16 @@ public class JsonPrinter {
                 .add("pattern", grp.getPattern())
                 .add("id", grp.getId());
     }
+    
+    public static JsonObjectBuilder json(MailDomainGroup grp) {
+        JsonObjectBuilder bld = jsonObjectBuilder()
+            .add("alias", grp.getPersistedGroupAlias() )
+            .add("id", grp.getId() )
+            .add("name", grp.getDisplayName() )
+            .add("description", grp.getDescription() )
+            .add("domains", asJsonArray(grp.getEmailDomainsAsList()) );
+        return bld;
+    }
 
     public static JsonArrayBuilder rolesToJson(List<DataverseRole> role) {
         JsonArrayBuilder bld = Json.createArrayBuilder();
@@ -257,6 +269,9 @@ public class JsonPrinter {
         if (dv.getDataverseTheme() != null) {
             bld.add("theme", JsonPrinter.json(dv.getDataverseTheme()));
         }
+        if(dv.getStorageDriverId() != null) {
+        	bld.add("storageDriverLabel", DataAccess.getStorageDriverLabelFor(dv.getStorageDriverId()));
+        }
 
         return bld;
     }
@@ -310,6 +325,8 @@ public class JsonPrinter {
     public static JsonObjectBuilder json(DatasetVersion dsv) {
         JsonObjectBuilder bld = jsonObjectBuilder()
                 .add("id", dsv.getId())
+                .add("datasetId", dsv.getDataset().getId())
+                .add("datasetPersistentId", dsv.getDataset().getGlobalId().asString())
                 .add("storageIdentifier", dsv.getDataset().getStorageIdentifier())
                 .add("versionNumber", dsv.getVersionNumber())
                 .add("versionMinorNumber", dsv.getMinorVersionNumber())
@@ -588,6 +605,7 @@ public class JsonPrinter {
                 .add("originalFileFormat", df.getOriginalFileFormat())
                 .add("originalFormatLabel", df.getOriginalFormatLabel())
                 .add ("originalFileSize", df.getOriginalFileSize())
+                .add("originalFileName", df.getOriginalFileName())
                 .add("UNF", df.getUnf())
                 //---------------------------------------------
                 // For file replace: rootDataFileId, previousDataFileId

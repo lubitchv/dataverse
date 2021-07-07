@@ -300,7 +300,7 @@ public class MediaResourceManagerImpl implements MediaResourceManager {
             List<DataFile> dataFiles = new ArrayList<>();
             try {
                 try {
-                    dataFiles = FileUtil.createDataFiles(editVersion, deposit.getInputStream(), uploadedZipFilename, guessContentTypeForMe, systemConfig);
+                    dataFiles = FileUtil.createDataFiles(editVersion, deposit.getInputStream(), uploadedZipFilename, guessContentTypeForMe, null, null, systemConfig);
                 } catch (EJBException ex) {
                     Throwable cause = ex.getCause();
                     if (cause != null) {
@@ -335,7 +335,7 @@ public class MediaResourceManagerImpl implements MediaResourceManager {
                     throw new SwordError(UriRegistry.ERROR_BAD_REQUEST, "Unable to add file(s) to dataset: " + violation.getMessage() + " The invalid value was \"" + violation.getInvalidValue() + "\".");
                 } else {
 
-                    ingestService.saveAndAddFilesToDataset(editVersion, dataFiles);
+                    ingestService.saveAndAddFilesToDataset(editVersion, dataFiles, false);
 
                 }
             } else {

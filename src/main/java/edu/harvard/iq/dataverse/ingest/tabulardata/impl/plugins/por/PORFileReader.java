@@ -19,19 +19,45 @@
 */
 package edu.harvard.iq.dataverse.ingest.tabulardata.impl.plugins.por;
 
-import java.io.*;
-import java.nio.*;
-import java.util.logging.*;
-
-import java.util.*;
-import java.util.regex.*;
-import java.text.*;
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.io.Writer;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.GregorianCalendar;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.Set;
+import java.util.TimeZone;
+import java.util.logging.Logger;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import org.apache.commons.lang.*;
 import org.apache.commons.codec.binary.Hex;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import edu.harvard.iq.dataverse.DataTable;
 import edu.harvard.iq.dataverse.datavariable.DataVariable;
@@ -42,7 +68,6 @@ import edu.harvard.iq.dataverse.ingest.tabulardata.spi.TabularDataFileReaderSpi;
 import edu.harvard.iq.dataverse.ingest.tabulardata.TabularDataIngest;
 import edu.harvard.iq.dataverse.ingest.tabulardata.InvalidData;
 import edu.harvard.iq.dataverse.ingest.tabulardata.impl.plugins.sav.SPSSConstants;
-
 
 
 /**
@@ -155,7 +180,7 @@ public class PORFileReader  extends TabularDataFileReader{
     }
     
     @Override
-    public TabularDataIngest read(BufferedInputStream stream, File additionalData) throws IOException{
+    public TabularDataIngest read(BufferedInputStream stream, boolean storeWithVariableHeader, File additionalData) throws IOException{
         dbgLog.fine("PORFileReader: read() start");
         
         if (additionalData != null) {
@@ -170,7 +195,7 @@ public class PORFileReader  extends TabularDataFileReader{
         BufferedReader bfReader = null;
         
         try {            
-            bfReader = new BufferedReader(new InputStreamReader(new FileInputStream(tempPORfile.getAbsolutePath()), "US-ASCII"));
+            bfReader = new BufferedReader(new InputStreamReader(new FileInputStream(tempPORfile.getAbsolutePath()), StandardCharsets.US_ASCII));
             if (bfReader == null){
                 dbgLog.fine("bfReader is null");
                 throw new IOException("bufferedReader is null");
@@ -201,7 +226,7 @@ public class PORFileReader  extends TabularDataFileReader{
                     headerId = "8S";
                 }
 
-                decode(headerId, bfReader);
+                decode(headerId, bfReader, storeWithVariableHeader);
 
                 
                 // for last iteration
@@ -357,7 +382,7 @@ public class PORFileReader  extends TabularDataFileReader{
         return ingesteddata;
     }
     
-    private void decode(String headerId, BufferedReader reader) throws IOException{
+    private void decode(String headerId, BufferedReader reader, boolean storeWithVariableHeader) throws IOException{
         if (headerId.equals("1")) decodeProductName(reader);
         else if (headerId.equals("2")) decodeLicensee(reader);
         else if (headerId.equals("3")) decodeFileLabel(reader);
@@ -373,7 +398,7 @@ public class PORFileReader  extends TabularDataFileReader{
         else if (headerId.equals("C")) decodeVariableLabel(reader);
         else if (headerId.equals("D")) decodeValueLabel(reader);
         else if (headerId.equals("E")) decodeDocument(reader);
-        else if (headerId.equals("F")) decodeData(reader);
+        else if (headerId.equals("F")) decodeData(reader, storeWithVariableHeader);
     }
     
 
@@ -542,7 +567,7 @@ public class PORFileReader  extends TabularDataFileReader{
         try {
             tempPORfile = File.createTempFile("tempPORfile.", ".por");
             fileOutPOR = new FileOutputStream(tempPORfile);
-            fileWriter = new BufferedWriter(new OutputStreamWriter(fileOutPOR, "utf8"));
+            fileWriter = new BufferedWriter(new OutputStreamWriter(fileOutPOR, StandardCharsets.UTF_8));
             porScanner = new Scanner(stream);
 
             // Because 64-bit and 32-bit machines decode POR's first 40-byte
@@ -1074,7 +1099,7 @@ public class PORFileReader  extends TabularDataFileReader{
     }
 
 
-    private void decodeData(BufferedReader reader) throws IOException {
+    private void decodeData(BufferedReader reader, boolean storeWithVariableHeader) throws IOException {
         dbgLog.fine("decodeData(): start");
         // TODO: get rid of this "variableTypeFinal"; -- L.A. 4.0 beta
         int[] variableTypeFinal= new int[varQnty];
@@ -1090,7 +1115,7 @@ public class PORFileReader  extends TabularDataFileReader{
 
         try {
             fileOutTab = new FileOutputStream(tabDelimitedDataFile);
-            pwout = new PrintWriter(new OutputStreamWriter(fileOutTab, "utf8"), true);
+            pwout = new PrintWriter(new OutputStreamWriter(fileOutTab, StandardCharsets.UTF_8), true);
 
             variableFormatTypeList = new String[varQnty];
             for (int i = 0; i < varQnty; i++) {
@@ -1101,6 +1126,9 @@ public class PORFileReader  extends TabularDataFileReader{
             // contents (variable) checker concering decimals
             Arrays.fill(variableTypeFinal, 0);
 
+            if (storeWithVariableHeader) {
+                pwout.println(StringUtils.join(variableNameList, "\t"));
+            } 
             // raw-case counter
             int j = 0; // case
 

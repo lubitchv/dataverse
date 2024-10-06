@@ -2,142 +2,112 @@
 Windows Development
 ===================
 
-Development on Windows is not well supported, unfortunately. You will have a much easier time if you develop on Mac or Linux as described under :doc:`dev-environment` section.
-
-If you want to try using Windows for Dataverse development, your best best is to use Vagrant, as described below. Minishift is also an option. These instructions were tested on Windows 10.
+Historically, development on Windows is `not well supported <https://groups.google.com/d/msg/dataverse-community/Hs9j5rIxqPI/-q54751aAgAJ>`_ but as of 2023 a container-based approach is recommended.
 
 .. contents:: |toctitle|
 	:local:
 
-Running Dataverse in Vagrant
-----------------------------
+Running Dataverse in Docker on Windows
+--------------------------------------
 
-Install Vagrant
-~~~~~~~~~~~~~~~
+See the `post <https://groups.google.com/g/dataverse-dev/c/utqkZ7gYsf4/m/4IDtsvKSAwAJ>`_ by Akio Sone for additional details, but please observe the following:
 
-Download and install Vagrant from https://www.vagrantup.com
+- You must have jq installed: https://jqlang.github.io/jq/download/
+- In git, the line-ending setting should be set to always LF (line feed, ``core.autocrlf=input``). Update: This should have been fixed by https://github.com/IQSS/dataverse/pull/10092.
 
-Vagrant advises you to reboot but let's install VirtualBox first.
+Once the above is all set you can move on to :doc:`/container/dev-usage` in the Container Guide.
 
-Install VirtualBox
-~~~~~~~~~~~~~~~~~~
+Generally speaking, if you're having trouble running a Dataverse dev environment in Docker on Windows, you are highly encouraged to post about it in the #containers channel on Zulip (https://chat.dataverse.org) and join a Containerization Working Group meeting (https://ct.gdcc.io). See also :doc:`/container/intro` in the Container Guide.
 
-Download and install VirtualBox from https://www.virtualbox.org
+Running Dataverse in Windows WSL
+--------------------------------
 
-Note that we saw an error saying "Oracle VM VirtualBox 5.2.8 Setup Wizard ended prematurely" but then we re-ran the installer and it seemed to work.
+It is possible to run Dataverse in Windows 10 and 11 through WSL (Windows Subsystem for Linux).
 
-Reboot
-~~~~~~
+Please note: these instructions have not been extensively tested. If you find any problems, please open an issue at https://github.com/IQSS/dataverse/issues.
 
-Again, Vagrant asks you to reboot, so go ahead.
-
-Install Git
+Install WSL
 ~~~~~~~~~~~
+If you have Docker already installed, you should already have WSL installed. Otherwise open PowerShell and run:
 
-Download and install Git from https://git-scm.com
+.. code-block:: powershell
+  
+   wsl --install
 
-Configure Git to use Unix Line Endings
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+If you already had WSL installed you can install a specific Linux distribution:
 
-Launch Git Bash and run the following commands:
+See the list of possible distributions:
 
-``git config --global core.autocrlf input``
+.. code-block:: powershell
 
-Pro tip: Use Shift-Insert to paste into Git Bash.
+  wsl --list --online
 
-See also https://help.github.com/articles/dealing-with-line-endings/
+Choose the distribution you would like. Then run the following command. These instructions were tested with Ubuntu.
 
-If you skip this step you are likely to see the following error when you run ``vagrant up``.
+.. code-block:: powershell
 
-``/tmp/vagrant-shell: ./install: /usr/bin/perl^M: bad interpreter: No such file or directory``
+  wsl --install -d <Distribution Name>
 
-Clone Git Repo
-~~~~~~~~~~~~~~
+You will be asked to create a Linux user.
+After the installation of Linux is complete, check that you have an Internet connection:
 
-From Git Bash, run the following command:
+.. code-block:: bash
 
-``git clone https://github.com/IQSS/dataverse.git``
+  ping www.google.com
 
-vagrant up
-~~~~~~~~~~
+If you do not have an Internet connection, try adding it in ``/etc/wsl.conf``
 
-From Git Bash, run the following commands:
+.. code-block:: bash
+  
+  [network]
+  generateResolvConf = false
 
-``cd dataverse``
+Also in ``/etc/resolv.conf`` add
 
-The ``dataverse`` directory you changed is the one you just cloned. Vagrant will operate on a file called ``Vagrantfile``.
+.. code-block:: bash
 
-``vagrant up``
+  nameserver 1.1.1.1
 
-After a long while you hopefully will have Dataverse installed at http://localhost:8888
+Now you can install all the tools one usually uses in Linux. For example, it is good idea to run an update:
 
-Running Dataverse in Minishift
-------------------------------
+.. code-block:: bash
 
-Minishift is a dev environment for OpenShift, which is Red Hat's distribution of Kubernetes.  The :doc:`containers` section contains much more detail but the essential steps for using Minishift on Windows are described below.
+   sudo apt update
+   sudo apt full-upgrade -y
 
-Install VirtualBox
-~~~~~~~~~~~~~~~~~~
-
-Download and install VirtualBox from https://www.virtualbox.org
-
-Install Git
-~~~~~~~~~~~
-
-Download and install Git from https://git-scm.com
-
-Install Minishift
+Install Dataverse
 ~~~~~~~~~~~~~~~~~
 
-Download Minishift from https://docs.openshift.org/latest/minishift/getting-started/installing.html . It should be a zip file.
+Now you can install Dataverse in WSL following the instructions for :doc:`classic-dev-env`
+At the end, check that you have ``-Ddataverse.pid.default-provider=fake`` in jvm-options.
 
-From Git Bash:
+Now you can access Dataverse in your Windows browser (Edge, Chrome, etc.):
 
-``cd ~/Downloads``
+- http://localhost:8080
+- username: dataverseAdmin
+- password: admin
 
-``unzip minishift*.zip``
+IDE for Dataverse in Windows
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Files in WSL are accessible from Windows for editing using ``\\wsl.localhost`` or ``\\wsl$`` path. Windows files are accessible under Linux in the ``/mnt/c/`` directory. Therefore one can use one's favorite editor or IDE to edit Dataverse project files. Then one can build using ``mvn`` in WSL and deploy manually in WSL using ``asadmin``.
 
-``mkdir ~/bin``
+It is still though possible to use a full-strength IDE. The following instructions are for IntelliJ users.
 
-``cp minishift*/minishift.exe ~/bin``
+- Install Intelij in Windows.
 
-Clone Git Repo
-~~~~~~~~~~~~~~
+You can open the project through ``\\wsl.localhost`` and navigate to the Dataverse project.
+You can try to build the project in IntelliJ. You may get a message ``Cannot establish network connection from WSL to Windows host (could be blocked by the firewall).`` In that case you can try
+to disable WSL Hyperviser from the firewall.
+After that you should be able to build the project in IntelliJ.
+It seems that at present it is impossible to deploy the Glassfish application in IntelliJ. You can try to add a Glassfish plugin through Settings->Plugins and in Run->Edit Configurations configure Application Server from WSL ``/usr/localhost/payara6`` with URL http://localhost:8080 and Server Domain as domain1, but it may fail since IntelliJ confuses the Windows and Linux paths.
 
-From Git Bash, run the following commands:
+To use the full strength of Intelij with build, deployment and debugging, one will need to use Intelij ``Remote development``. Close all the projects in IntelliJ and go to ``Remote development->WSL`` and press ``New Project``. In WSL instance choose your Linux distribution and press ``Next``. In ``Project Directory`` navigate to WSL Dataverse project. Then press ``Download IDE and Connect``. This will install IntelliJ in WSL in ``~/.cache/JetBrains/``. Now in IntelliJ you should see your project opened in a new IntelliJ window. After adding the Glassfish plugin and editing your configuration you should be able to build the project and run the project.
 
-``git config --global core.autocrlf input``
+pgAdmin in Windows for Dataverse
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``git clone https://github.com/IQSS/dataverse.git``
+You can access the Dataverse database from Windows.
 
-Start Minishift VM and Run Dataverse
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Install pgAdmin from https://www.pgadmin.org/download/pgadmin-4-windows/
 
-``minishift start --vm-driver=virtualbox --memory=8GB``
-
-``eval $(minishift oc-env)``
-
-``oc new-project project1``
-
-``cd ~/dataverse``
-
-``oc new-app conf/openshift/openshift.json``
-
-``minishift console``
-
-This should open a web browser. In Microsoft Edge we saw ``INET_E_RESOURCE_NOT_FOUND`` so if you see that, try Chrome instead. A cert error is expected. Log in with the username "developer" and any password such as "asdf".
-
-Under "Overview" you should see a URL that has "dataverse-project1" in it. You should be able to click it and log into Dataverse with the username "dataverseAdmin" and the password "admin".
-
-Improving Windows Support
--------------------------
-
-Windows Subsystem for Linux
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-We have been unable to get Windows Subsystem for Linux (WSL) to work. We tried following the steps at https://docs.microsoft.com/en-us/windows/wsl/install-win10 but the "Get" button was greyed out when we went to download Ubuntu.
-
-Discussion and Feedback
-~~~~~~~~~~~~~~~~~~~~~~~
-
-For more discussion of Windows support for Dataverse development see our community list thread `"Do you want to develop on Windows?" <https://groups.google.com/d/msg/dataverse-community/Hs9j5rIxqPI/-q54751aAgAJ>`_ We would be happy to inconrporate feedback from Windows developers into this page. The :doc:`documentation` section describes how.
+In pgAdmin, register a server using 127.0.0.1 with port 5432, database dvndb and dvnapp as username with secret password. Now you will be able to access and update the Dataverse database.

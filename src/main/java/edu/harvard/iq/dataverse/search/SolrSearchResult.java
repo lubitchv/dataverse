@@ -1,23 +1,29 @@
 package edu.harvard.iq.dataverse.search;
 
-import edu.harvard.iq.dataverse.DataFile;
-import edu.harvard.iq.dataverse.Dataset;
-import edu.harvard.iq.dataverse.DvObject;
+import static edu.harvard.iq.dataverse.util.json.NullSafeJsonBuilder.jsonObjectBuilder;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Predicate;
+import java.util.logging.Logger;
+
+import edu.harvard.iq.dataverse.*;
+import jakarta.json.Json;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
+
+import org.apache.commons.collections4.CollectionUtils;
+
 import edu.harvard.iq.dataverse.api.Util;
 import edu.harvard.iq.dataverse.dataset.DatasetThumbnail;
+import edu.harvard.iq.dataverse.settings.JvmSettings;
 import edu.harvard.iq.dataverse.util.DateUtil;
 import edu.harvard.iq.dataverse.util.json.JsonPrinter;
 import edu.harvard.iq.dataverse.util.json.NullSafeJsonBuilder;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.logging.Logger;
-import javax.json.Json;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import static edu.harvard.iq.dataverse.util.json.NullSafeJsonBuilder.jsonObjectBuilder;
 
 public class SolrSearchResult {
 
@@ -71,6 +77,7 @@ public class SolrSearchResult {
     private String dataverseAffiliation;
     private String citation;
     private String citationHtml;
+    private String datasetType;
     /**
      * Files and datasets might have a UNF. Dataverses don't.
      */
@@ -79,13 +86,16 @@ public class SolrSearchResult {
     private String fileContentType;
     private Long fileSizeInBytes;
     /**
-     * fileMD5 is here for legacy and backward-compatibility reasons. It might be deprecated some day in favor of "fileChecksumType" and "fileChecksumValue"
+     * fileMD5 is here for legacy and backward-compatibility reasons. It might
+     * be deprecated some day in favor of "fileChecksumType" and
+     * "fileChecksumValue"
      */
     private String fileMd5;
     private DataFile.ChecksumType fileChecksumType;
     private String fileChecksumValue;
     private String dataverseAlias;
     private String dataverseParentAlias;
+    private String dataverseParentName;
 //    private boolean statePublished;
     /**
      * @todo Investigate/remove this "unpublishedState" variable. For files that
@@ -99,7 +109,7 @@ public class SolrSearchResult {
     private boolean deaccessionedState = false;
     private long datasetVersionId;
     private String versionNumberFriendly;
-    //Determine if the search result is owned by any of the dvs in the tree of the DV displayed
+    // Determine if the search result is owned by any of the dvs in the tree of the DV displayed
     private boolean isInTree;
     private float score;
     private List<String> userRole;
@@ -108,20 +118,26 @@ public class SolrSearchResult {
     private String harvestingDescription = null;
     private List<String> fileCategories = null;
     private List<String> tabularDataTags = null;
-    
+
     private String identifierOfDataverse = null;
     private String nameOfDataverse = null;
-    
+
     private String filePersistentId = null;
-    
+
+    private Long embargoEndDate;
+
+    private Long retentionEndDate;
+
+    private boolean datasetValid;
+
     public String getDvTree() {
         return dvTree;
     }
-    
+
     public void setDvTree(String dvTree) {
         this.dvTree = dvTree;
-    } 
-    
+    }
+
     public boolean isIsInTree() {
         return isInTree;
     }
@@ -129,7 +145,7 @@ public class SolrSearchResult {
     public void setIsInTree(boolean isInTree) {
         this.isInTree = isInTree;
     }
-    
+
     public boolean isHarvested() {
         return harvested;
     }
@@ -137,14 +153,14 @@ public class SolrSearchResult {
     public void setHarvested(boolean harvested) {
         this.harvested = harvested;
     }
-    
+
     public String getHarvestingDescription() {
-        //if (this.isHarvested()) {
-            return harvestingDescription;
-        //}
-        //return null;
+        // if (this.isHarvested()) {
+        return harvestingDescription;
+        // }
+        // return null;
     }
-    
+
     public void setHarvestingDescription(String harvestingDescription) {
         this.harvestingDescription = harvestingDescription;
     }
@@ -246,10 +262,14 @@ public class SolrSearchResult {
     public void setDeaccessionedState(boolean deaccessionedState) {
         this.deaccessionedState = deaccessionedState;
     }
+
     /**
      * @todo: used? remove
      */
     private List<String> matchedFields;
+
+    // External Status Label (enabled via AllowedCurationLabels setting)
+    private String externalStatus;
 
     /**
      * @todo: remove name?
@@ -398,25 +418,20 @@ public class SolrSearchResult {
         return matchedFieldsArray;
     }
 
-    public JsonObject toJsonObject(boolean showRelevance, boolean showEntityIds, boolean showApiUrls) {
-        return json(showRelevance, showEntityIds, showApiUrls).build();
-    }
-
     /**
      * Add additional fields for the MyData page
      *
      * @return
      */
-    public JsonObjectBuilder getJsonForMyData() {
+    public JsonObjectBuilder getJsonForMyData(boolean isValid) {
 
-        JsonObjectBuilder myDataJson = json(true, true, true);//boolean showRelevance, boolean showEntityIds, boolean showApiUrls)
+        JsonObjectBuilder myDataJson = json(true, true, true);// boolean showRelevance, boolean showEntityIds, boolean showApiUrls)
 
         myDataJson.add("publication_statuses", this.getPublicationStatusesAsJSON())
-                .add("is_draft_state", this.isDraftState())
-                .add("is_in_review_state", this.isInReviewState())
-                .add("is_unpublished_state", this.isUnpublishedState())
-                .add("is_published", this.isPublishedState())
+                .add("is_draft_state", this.isDraftState()).add("is_in_review_state", this.isInReviewState())
+                .add("is_unpublished_state", this.isUnpublishedState()).add("is_published", this.isPublishedState())
                 .add("is_deaccesioned", this.isDeaccessionedState())
+                .add("is_valid", isValid)
                 .add("date_to_display_on_card", getDateToDisplayOnCard());
 
         // Add is_deaccessioned attribute, even though MyData currently screens any deaccessioned info out
@@ -426,23 +441,25 @@ public class SolrSearchResult {
         }
 
         if ((this.getParent() != null) && (!this.getParent().isEmpty())) {
-            //System.out.println("keys:" + parent.keySet().toString());
-            if (this.entity.isInstanceofDataFile()) {
+            // System.out.println("keys:" + parent.keySet().toString());
+            if (this.entity != null && this.entity.isInstanceofDataFile()) {
                 myDataJson.add("parentIdentifier", this.getParent().get(SolrSearchResult.PARENT_IDENTIFIER))
                         .add("parentName", this.getParent().get("name"));
 
             } else {
                 // for Dataverse and Dataset, get parent which is a Dataverse
-                myDataJson.add("parentId", this.getParent().get("id"))
-                        .add("parentName", this.getParent().get("name"));
+                myDataJson.add("parentId", this.getParent().get("id")).add("parentName", this.getParent().get("name"));
             }
         }
 
         return myDataJson;
-    } //getJsonForMydata
+    } // getJsonForMydata
 
     public JsonObjectBuilder json(boolean showRelevance, boolean showEntityIds, boolean showApiUrls) {
+        return json(showRelevance, showEntityIds, showApiUrls, null, null);
+    }
 
+    public JsonObjectBuilder json(boolean showRelevance, boolean showEntityIds, boolean showApiUrls, List<String> metadataFields, Long datasetFileCount) {
         if (this.type == null) {
             return jsonObjectBuilder();
         }
@@ -453,10 +470,11 @@ public class SolrSearchResult {
         String datasetCitation = null;
         String datasetName = null;
         String datasetId = null;
-        String datasetPersistentId = null;  
+        String datasetPersistentId = null;
         String filePersistentId = null;
         String preferredUrl = null;
         String apiUrl = null;
+        String publisherName = null;
 
         if (this.type.equals(SearchConstants.DATAVERSES)) {
             displayName = this.name;
@@ -466,6 +484,8 @@ public class SolrSearchResult {
             displayName = this.title;
             identifierLabel = "global_id";
             preferredUrl = getPersistentUrl();
+            publisherName = this.parent.get("name");
+            // if
             /**
              * @todo Should we show the name of the parent dataverse?
              */
@@ -483,15 +503,15 @@ public class SolrSearchResult {
             datasetPersistentId = parent.get(SolrSearchResult.PARENT_IDENTIFIER);
         }
 
-        //displayName = null; // testing NullSafeJsonBuilder
+        // displayName = null; // testing NullSafeJsonBuilder
         // because we are using NullSafeJsonBuilder key/value pairs will be dropped if the value is null
         NullSafeJsonBuilder nullSafeJsonBuilder = jsonObjectBuilder()
                 .add("name", displayName)
                 .add("type", getDisplayType(getType()))
                 .add("url", preferredUrl)
                 .add("image_url", getImageUrl())
-                //                .add("persistent_url", this.persistentUrl)
-                //                .add("download_url", this.downloadUrl)
+                // .add("persistent_url", this.persistentUrl)
+                // .add("download_url", this.downloadUrl)
                 /**
                  * @todo How much value is there in exposing the identifier for
                  * dataverses? For
@@ -534,6 +554,7 @@ public class SolrSearchResult {
                 .add("file_persistent_id", this.filePersistentId)
                 .add("dataset_name", datasetName)
                 .add("dataset_id", datasetId)
+                .add("publisher", publisherName)
                 .add("dataset_persistent_id", datasetPersistentId)
                 .add("dataset_citation", datasetCitation)
                 .add("deaccession_reason", this.deaccessionReason)
@@ -551,7 +572,125 @@ public class SolrSearchResult {
                 nullSafeJsonBuilder.add("entity_id", this.entityId);
             }
         }
-        
+        if (!getPublicationStatuses().isEmpty()) {
+            nullSafeJsonBuilder.add("publicationStatuses", getPublicationStatusesAsJSON());
+        }
+
+        if (this.entity == null) {
+
+        } else {
+            if (this.entity.isInstanceofDataset()) {
+                nullSafeJsonBuilder.add("storageIdentifier", this.entity.getStorageIdentifier());
+                Dataset ds = (Dataset) this.entity;
+                DatasetVersion dv = ds.getVersionFromId(this.datasetVersionId);
+
+                if (!dv.getKeywords().isEmpty()) {
+                    JsonArrayBuilder keyWords = Json.createArrayBuilder();
+                    for (String keyword : dv.getKeywords()) {
+                        keyWords.add(keyword);
+                    }
+                    nullSafeJsonBuilder.add("keywords", keyWords);
+                }
+
+                JsonArrayBuilder subjects = Json.createArrayBuilder();
+                for (String subject : dv.getDatasetSubjects()) {
+                    subjects.add(subject);
+                }
+                nullSafeJsonBuilder.add("subjects", subjects);
+                nullSafeJsonBuilder.add("fileCount", datasetFileCount);
+                nullSafeJsonBuilder.add("versionId", dv.getId());
+                nullSafeJsonBuilder.add("versionState", dv.getVersionState().toString());
+                if (this.isPublishedState()) {
+                    nullSafeJsonBuilder.add("majorVersion", dv.getVersionNumber());
+                    nullSafeJsonBuilder.add("minorVersion", dv.getMinorVersionNumber());
+                }
+
+                nullSafeJsonBuilder.add("createdAt", ds.getCreateDate());
+                nullSafeJsonBuilder.add("updatedAt", ds.getModificationTime());
+
+                if (!dv.getDatasetContacts().isEmpty()) {
+                    JsonArrayBuilder contacts = Json.createArrayBuilder();
+                    NullSafeJsonBuilder nullSafeJsonBuilderInner = jsonObjectBuilder();
+                    for (String contact[] : dv.getDatasetContacts(false)) {
+                        nullSafeJsonBuilderInner.add("name", contact[0]);
+                        nullSafeJsonBuilderInner.add("affiliation", contact[1]);
+                        contacts.add(nullSafeJsonBuilderInner);
+                    }
+                    nullSafeJsonBuilder.add("contacts", contacts);
+                }
+                if (!dv.getRelatedPublications().isEmpty()) {
+                    JsonArrayBuilder relPub = Json.createArrayBuilder();
+                    NullSafeJsonBuilder inner = jsonObjectBuilder();
+                    for (DatasetRelPublication dsRelPub : dv.getRelatedPublications()) {
+                        inner.add("title", dsRelPub.getTitle());
+                        inner.add("citation", dsRelPub.getText());
+                        inner.add("url", dsRelPub.getUrl());
+                        relPub.add(inner);
+                    }
+                    nullSafeJsonBuilder.add("publications", relPub);
+                }
+
+                if (!dv.getDatasetProducers().isEmpty()) {
+                    JsonArrayBuilder producers = Json.createArrayBuilder();
+                    for (String[] producer : dv.getDatasetProducers()) {
+                        producers.add(producer[0]);
+                    }
+                    nullSafeJsonBuilder.add("producers", producers);
+                }
+                if (!dv.getRelatedMaterial().isEmpty()) {
+                    JsonArrayBuilder relatedMaterials = Json.createArrayBuilder();
+                    for (String relatedMaterial : dv.getRelatedMaterial()) {
+                        relatedMaterials.add(relatedMaterial);
+                    }
+                    nullSafeJsonBuilder.add("relatedMaterial", relatedMaterials);
+                }
+
+                if (!dv.getGeographicCoverage().isEmpty()) {
+                    JsonArrayBuilder geoCov = Json.createArrayBuilder();
+                    NullSafeJsonBuilder inner = jsonObjectBuilder();
+                    for (String ind[] : dv.getGeographicCoverage()) {
+                        inner.add("country", ind[0]);
+                        inner.add("state", ind[1]);
+                        inner.add("city", ind[2]);
+                        inner.add("other", ind[3]);
+                        geoCov.add(inner);
+                    }
+                    nullSafeJsonBuilder.add("geographicCoverage", geoCov);
+                }
+                if (!dv.getDataSource().isEmpty()) {
+                    JsonArrayBuilder dataSources = Json.createArrayBuilder();
+                    for (String dsource : dv.getDataSource()) {
+                        dataSources.add(dsource);
+                    }
+                    nullSafeJsonBuilder.add("dataSources", dataSources);
+                }
+
+                if (CollectionUtils.isNotEmpty(metadataFields)) {
+                    // create metadata fields map names
+                    Map<String, List<String>> metadataFieldMapNames = computeRequestedMetadataFieldMapNames(
+                            metadataFields);
+
+                    // add metadatafields objet to wrap all requeested fields
+                    NullSafeJsonBuilder metadataFieldBuilder = jsonObjectBuilder();
+
+                    Map<MetadataBlock, List<DatasetField>> groupedFields = DatasetField
+                            .groupByBlock(dv.getFlatDatasetFields());
+                    json(metadataFieldMapNames, groupedFields, metadataFieldBuilder);
+
+                    nullSafeJsonBuilder.add("metadataBlocks", metadataFieldBuilder);
+                }
+            } else if (this.entity.isInstanceofDataverse()) {
+                nullSafeJsonBuilder.add("affiliation", dataverseAffiliation);
+                nullSafeJsonBuilder.add("parentDataverseName", dataverseParentName);
+                nullSafeJsonBuilder.add("parentDataverseIdentifier", dataverseParentAlias);
+            } else if (this.entity.isInstanceofDataFile()) {
+                // "published_at" field is only set when the version state is not draft.
+                // On the contrary, this field also takes into account DataFiles in draft version,
+                // returning the creation date if the DataFile is not published, or the publication date otherwise.
+                nullSafeJsonBuilder.add("releaseOrCreateDate", getFormattedReleaseOrCreateDate());
+            }
+        }
+
         if (showApiUrls) {
             /**
              * @todo We should probably have a metadata_url or api_url concept
@@ -576,12 +715,65 @@ public class SolrSearchResult {
         return nullSafeJsonBuilder;
     }
 
+    private void json(Map<String, List<String>> metadataFieldMapNames,
+            Map<MetadataBlock, List<DatasetField>> groupedFields, NullSafeJsonBuilder metadataFieldBuilder) {
+        for (Map.Entry<String, List<String>> metadataFieldNamesEntry : metadataFieldMapNames.entrySet()) {
+            String metadataBlockName = metadataFieldNamesEntry.getKey();
+            List<String> metadataBlockFieldNames = metadataFieldNamesEntry.getValue();
+            for (MetadataBlock metadataBlock : groupedFields.keySet()) {
+                if (metadataBlockName.equals(metadataBlock.getName())) {
+                    // create metadataBlock object
+                    NullSafeJsonBuilder metadataBlockBuilder = jsonObjectBuilder();
+                    metadataBlockBuilder.add("displayName", metadataBlock.getDisplayName());
+                    JsonArrayBuilder fieldsArray = Json.createArrayBuilder();
+
+                    List<DatasetField> datasetFields = groupedFields.get(metadataBlock);
+                    for (DatasetField datasetField : datasetFields) {
+                        if (metadataBlockFieldNames.contains("*")
+                                || metadataBlockFieldNames.contains(datasetField.getDatasetFieldType().getName())) {
+                            if (datasetField.getDatasetFieldType().isCompound() || !datasetField.getDatasetFieldType().isHasParent()) {
+                                JsonObject item = JsonPrinter.json(datasetField);
+                                if (item != null) {
+                                    fieldsArray.add(item);
+                                }
+                            }
+                        }
+                    }
+                    // with a fields to hold all requested properties
+                    metadataBlockBuilder.add("fields", fieldsArray);
+
+                    metadataFieldBuilder.add(metadataBlock.getName(), metadataBlockBuilder);
+                }
+            }
+        }
+    }
+
+    private Map<String, List<String>> computeRequestedMetadataFieldMapNames(List<String> metadataFields) {
+        Map<String, List<String>> metadataFieldMapNames = new HashMap<>();
+        for (String metadataField : metadataFields) {
+            String parts[] = metadataField.split(":");
+            if (parts.length == 2) {
+                List<String> metadataFieldNames = metadataFieldMapNames.get(parts[0]);
+                if (metadataFieldNames == null) {
+                    metadataFieldNames = new ArrayList<>();
+                    metadataFieldMapNames.put(parts[0], metadataFieldNames);
+                }
+                metadataFieldNames.add(parts[1]);
+            }
+        }
+        return metadataFieldMapNames;
+    }
+
     private String getDateTimePublished() {
         String datePublished = null;
         if (draftState == false) {
-            datePublished = releaseOrCreateDate == null ? null : Util.getDateTimeFormat().format(releaseOrCreateDate);
+            datePublished = getFormattedReleaseOrCreateDate();
         }
         return datePublished;
+    }
+
+    private String getFormattedReleaseOrCreateDate() {
+        return releaseOrCreateDate == null ? null : Util.getDateTimeFormat().format(releaseOrCreateDate);
     }
 
     public String getId() {
@@ -732,10 +924,8 @@ public class SolrSearchResult {
              * @todo don't hard code "title" here. And should we collapse name
              * and title together anyway?
              */
-            if (!field.equals(SearchFields.NAME)
-                    && !field.equals(SearchFields.DESCRIPTION)
-                    && !field.equals(SearchFields.DATASET_DESCRIPTION)
-                    && !field.equals(SearchFields.AFFILIATION)
+            if (!field.equals(SearchFields.NAME) && !field.equals(SearchFields.DESCRIPTION)
+                    && !field.equals(SearchFields.DATASET_DESCRIPTION) && !field.equals(SearchFields.AFFILIATION)
                     && !field.equals("title")) {
                 filtered.add(highlight);
             }
@@ -750,19 +940,19 @@ public class SolrSearchResult {
     public List<String> getFileCategories() {
         return fileCategories;
     }
-    
+
     public void setFileCategories(List<String> fileCategories) {
         this.fileCategories = fileCategories;
     }
-    
+
     public List<String> getTabularDataTags() {
         return tabularDataTags;
     }
-    
+
     public void setTabularDataTags(List<String> tabularDataTags) {
         this.tabularDataTags = tabularDataTags;
     }
-    
+
     public Map<String, String> getParent() {
         return parent;
     }
@@ -814,6 +1004,14 @@ public class SolrSearchResult {
 
     public void setCitationHtml(String citationHtml) {
         this.citationHtml = citationHtml;
+    }
+
+    public String getDatasetType() {
+        return datasetType;
+    }
+
+    public void setDatasetType(String datasetType) {
+        this.datasetType = datasetType;
     }
 
     public String getFiletype() {
@@ -932,7 +1130,7 @@ public class SolrSearchResult {
             String badString = "null";
             if (!identifier.contains(badString)) {
                 if (entity != null && entity instanceof Dataset) {
-                    if (this.isHarvested() && ((Dataset)entity).getHarvestedFrom() != null) {
+                    if (this.isHarvested() && ((Dataset) entity).getHarvestedFrom() != null) {
                         String remoteArchiveUrl = ((Dataset) entity).getRemoteArchiveURL();
                         if (remoteArchiveUrl != null) {
                             return remoteArchiveUrl;
@@ -945,7 +1143,9 @@ public class SolrSearchResult {
                 }
                 return "/dataset.xhtml?persistentId=" + identifier;
             } else {
-                logger.info("Dataset identifier/globalId contains \"" + badString + "\" perhaps due to https://github.com/IQSS/dataverse/issues/1147 . Fix data in database and reindex. Returning failsafe URL: " + failSafeUrl);
+                logger.info("Dataset identifier/globalId contains \"" + badString
+                        + "\" perhaps due to https://github.com/IQSS/dataverse/issues/1147 . Fix data in database and reindex. Returning failsafe URL: "
+                        + failSafeUrl);
                 return failSafeUrl;
             }
         } else {
@@ -959,13 +1159,13 @@ public class SolrSearchResult {
             return null;
         }
         if (entity instanceof DataFile) {
-            return parent.get(PARENT_IDENTIFIER);   // Dataset globalID
+            return parent.get(PARENT_IDENTIFIER); // Dataset globalID
         }
 
         return null;
-        //if (entity)
+        // if (entity)
     }
-    
+
     public String getFilePersistentId() {
         return filePersistentId;
     }
@@ -973,51 +1173,47 @@ public class SolrSearchResult {
     public void setFilePersistentId(String pid) {
         filePersistentId = pid;
     }
+
     public String getFileUrl() {
-        // Nothing special needs to be done for harvested file URLs: 
+        // Nothing special needs to be done for harvested file URLs:
         // simply directing these to the local dataset.xhtml for this dataset
-        // will take care of it - because DatasetPage will issue a redirect 
-        // to the remote archive URL. 
+        // will take care of it - because DatasetPage will issue a redirect
+        // to the remote archive URL.
         // This is true AS OF 4.2.4, FEB. 2016! - We'll probably want to make
-        // .getRemoteArchiveURL() methods, both in DataFile and Dataset objects, 
-        // work again at some point in the future. 
+        // .getRemoteArchiveURL() methods, both in DataFile and Dataset objects,
+        // work again at some point in the future.
         /*
-        if (entity != null && entity instanceof DataFile && this.isHarvested()) {
-            String remoteArchiveUrl = ((DataFile) entity).getRemoteArchiveURL();
-            if (remoteArchiveUrl != null) {
-                return remoteArchiveUrl;
-            }
-            return null;
-        }*/
-        if (entity.getIdentifier() != null){
-            return "/file.xhtml?persistentId=" + entity.getGlobalIdString();
+		 * if (entity != null && entity instanceof DataFile && this.isHarvested()) { String remoteArchiveUrl = ((DataFile) entity).getRemoteArchiveURL(); if
+		 * (remoteArchiveUrl != null) { return remoteArchiveUrl; } return null; }
+         */
+        if (entity.getIdentifier() != null) {
+            GlobalId entityPid = entity.getGlobalId();
+            return "/file.xhtml?persistentId=" + ((entityPid != null) ? entityPid.asString() : null);
         }
-        
+
         return "/file.xhtml?fileId=" + entity.getId() + "&datasetVersionId=" + datasetVersionId;
-        
+
         /*
-        if (parentDatasetGlobalId != null) {
-            return "/dataset.xhtml?persistentId=" + parentDatasetGlobalId;
-        } else {
-            return "/dataset.xhtml?id=" + parent.get(SearchFields.ID) + "&versionId=" + datasetVersionId;
-        }*/
+		 * if (parentDatasetGlobalId != null) { return "/dataset.xhtml?persistentId=" + parentDatasetGlobalId; } else { return "/dataset.xhtml?id=" +
+		 * parent.get(SearchFields.ID) + "&versionId=" + datasetVersionId; }
+         */
     }
-    
+
     public String getFileDatasetUrl() {
         // See the comment in the getFileUrl() method above. -- L.A. 4.2.4
         /*
-        if (entity != null && entity instanceof DataFile && this.isHarvested()) {
-            String remoteArchiveUrl = ((DataFile) entity).getRemoteArchiveURL();
-            if (remoteArchiveUrl != null) {
-                return remoteArchiveUrl;
-            }
-            return null;
-        }*/
-               
-        String parentDatasetGlobalId = parent.get(PARENT_IDENTIFIER);        
+		 * if (entity != null && entity instanceof DataFile && this.isHarvested()) { String remoteArchiveUrl = ((DataFile) entity).getRemoteArchiveURL(); if
+		 * (remoteArchiveUrl != null) { return remoteArchiveUrl; } return null; }
+         */
+
+        String parentDatasetGlobalId = parent.get(PARENT_IDENTIFIER);
 
         if (parentDatasetGlobalId != null) {
-            return "/dataset.xhtml?persistentId=" + parentDatasetGlobalId;
+            if (isDraftState()) {
+                return "/dataset.xhtml?persistentId=" + parentDatasetGlobalId + "&version=DRAFT";
+            } else {
+                return "/dataset.xhtml?persistentId=" + parentDatasetGlobalId;
+            }
         } else {
             return "/dataset.xhtml?id=" + parent.get(SearchFields.ID) + "&versionId=" + datasetVersionId;
         }
@@ -1051,6 +1247,13 @@ public class SolrSearchResult {
         this.dataverseParentAlias = dataverseParentAlias;
     }
 
+    /**
+     * @param dataverseParentName the dataverseParentName to set
+     */
+    public void setDataverseParentName(String dataverseParentName) {
+        this.dataverseParentName = dataverseParentName;
+    }
+
     public float getScore() {
         return score;
     }
@@ -1072,14 +1275,11 @@ public class SolrSearchResult {
     }
 
     /*
-    public JsonArrayBuilder getUserRolesAsJson() {
-
-        JsonArrayBuilder jsonRoleStrings = Json.createArrayBuilder();
-        for (String role : this.getUserRole()) {
-            jsonRoleStrings.add(role);
-        }
-        return jsonRoleStrings;
-    }*/
+	 * public JsonArrayBuilder getUserRolesAsJson() {
+	 * 
+	 * JsonArrayBuilder jsonRoleStrings = Json.createArrayBuilder(); for (String role : this.getUserRole()) { jsonRoleStrings.add(role); } return
+	 * jsonRoleStrings; }
+     */
     public List<String> getUserRole() {
         return userRole;
     }
@@ -1091,16 +1291,61 @@ public class SolrSearchResult {
     public String getIdentifierOfDataverse() {
         return identifierOfDataverse;
     }
-    
+
     public void setIdentifierOfDataverse(String id) {
         this.identifierOfDataverse = id;
     }
-    
+
     public String getNameOfDataverse() {
         return nameOfDataverse;
     }
-    
+
     public void setNameOfDataverse(String id) {
         this.nameOfDataverse = id;
+    }
+
+    public String getExternalStatus() {
+        return externalStatus;
+    }
+
+    public void setExternalStatus(String externalStatus) {
+        this.externalStatus = externalStatus;
+
+    }
+
+    public Long getEmbargoEndDate() {
+        return embargoEndDate;
+    }
+
+    public void setEmbargoEndDate(Long embargoEndDate) {
+        this.embargoEndDate = embargoEndDate;
+    }
+
+    public Long getRetentionEndDate() {
+        return retentionEndDate;
+    }
+
+    public void setRetentionEndDate(Long retentionEndDate) {
+        this.retentionEndDate = retentionEndDate;
+    }
+
+    public void setDatasetValid(Boolean datasetValid) {
+        this.datasetValid = datasetValid == null || Boolean.valueOf(datasetValid);
+    }
+
+    public boolean isValid(Predicate<SolrSearchResult> canUpdateDataset) {
+        if (this.datasetValid) {
+            return true;
+        }
+        if (!this.getType().equals("datasets")) {
+            return true;
+        }
+        if (this.isDraftState()) {
+            return false;
+        }
+        if (!JvmSettings.UI_SHOW_VALIDITY_LABEL_WHEN_PUBLISHED.lookupOptional(Boolean.class).orElse(true)) {
+            return true;
+        }
+        return !canUpdateDataset.test(this);
     }
 }

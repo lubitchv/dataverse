@@ -14,6 +14,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDate;
+
 @ExtendWith(MockitoExtension.class)
 class FileDownloadHelperTest {
 
@@ -170,6 +172,94 @@ class FileDownloadHelperTest {
         assertTrue(fileDownloadHelper.canDownloadFile(fileMetadata));
     }
 
+    @Test
+    void testCanDownloadFile_forUnrestrictedReleasedActiveEmbargoFile() {
+        DataFile dataFile = new DataFile();
+        dataFile.setId(2L);
+
+        // With an embargo, an unrestricted file should only be accessible if the embargo has ended
+
+        Embargo emb = new Embargo(LocalDate.now().plusDays(3), "Still embargoed");
+        dataFile.setEmbargo(emb);
+        
+        DatasetVersion datasetVersion = new DatasetVersion();
+        datasetVersion.setVersionState(DatasetVersion.VersionState.RELEASED);
+
+        FileMetadata fileMetadata = new FileMetadata();
+        fileMetadata.setId(1L);
+        fileMetadata.setRestricted(false);
+        fileMetadata.setDataFile(dataFile);
+        fileMetadata.setDatasetVersion(datasetVersion);
+        mockPermissionResponseRequestOn(Permission.DownloadFile, false);
+        assertFalse(fileDownloadHelper.canDownloadFile(fileMetadata));
+    }
+
+    @Test
+    void testCanDownloadFile_forUnrestrictedReleasedExpiredEmbargoFile() {
+        DataFile dataFile = new DataFile();
+        dataFile.setId(2L);
+
+        // With an embargo, an unrestricted file should only be accessible if the embargo has ended
+
+        Embargo emb = new Embargo(LocalDate.now().minusDays(3), "Was embargoed");
+        dataFile.setEmbargo(emb);
+        
+        DatasetVersion datasetVersion = new DatasetVersion();
+        datasetVersion.setVersionState(DatasetVersion.VersionState.RELEASED);
+
+        FileMetadata fileMetadata = new FileMetadata();
+        fileMetadata.setId(1L);
+        fileMetadata.setRestricted(false);
+        fileMetadata.setDataFile(dataFile);
+        fileMetadata.setDatasetVersion(datasetVersion);
+        
+        assertTrue(fileDownloadHelper.canDownloadFile(fileMetadata));
+    }
+
+    @Test
+    void testCanNotDownloadFile_forExpiredRetentionFile() {
+        DataFile dataFile = new DataFile();
+        dataFile.setId(2L);
+
+        // With an expired retention end date, an unrestricted file should not be accessible
+
+        Retention ret = new Retention(LocalDate.now().minusDays(1), "Retention period expired");
+        dataFile.setRetention(ret);
+
+        DatasetVersion datasetVersion = new DatasetVersion();
+        datasetVersion.setVersionState(DatasetVersion.VersionState.RELEASED);
+
+        FileMetadata fileMetadata = new FileMetadata();
+        fileMetadata.setId(1L);
+        fileMetadata.setRestricted(false);
+        fileMetadata.setDataFile(dataFile);
+        fileMetadata.setDatasetVersion(datasetVersion);
+
+        assertFalse(fileDownloadHelper.canDownloadFile(fileMetadata));
+    }
+
+    @Test
+    void testCanDownloadFile_forUnrestrictedReleasedNotExpiredRetentionFile() {
+        DataFile dataFile = new DataFile();
+        dataFile.setId(2L);
+
+        // With a retention end date in the future, an unrestricted file should be accessible
+
+        Retention ret = new Retention(LocalDate.now(), "Retention period NOT expired");
+        dataFile.setRetention(ret);
+
+        DatasetVersion datasetVersion = new DatasetVersion();
+        datasetVersion.setVersionState(DatasetVersion.VersionState.RELEASED);
+
+        FileMetadata fileMetadata = new FileMetadata();
+        fileMetadata.setId(1L);
+        fileMetadata.setRestricted(false);
+        fileMetadata.setDataFile(dataFile);
+        fileMetadata.setDatasetVersion(datasetVersion);
+
+        assertTrue(fileDownloadHelper.canDownloadFile(fileMetadata));
+    }
+
     @ParameterizedTest
     @CsvSource({"false", "true"})
     void testCanDownloadFile_forRestrictedReleasedFile(boolean hasPermission) {
@@ -192,6 +282,62 @@ class FileDownloadHelperTest {
         // call again to exercise the cache and ensure it returns the same result
         assertEquals(hasPermission, fileDownloadHelper.canDownloadFile(fileMetadata), "Cached response does not match initial response!");
     }
+
+    @ParameterizedTest
+    @CsvSource({"false", "true"})
+    void testCanDownloadFile_forRestrictedReleasedFileWithActiveEmbargo(boolean hasPermission) {
+        DataFile dataFile = new DataFile();
+        dataFile.setId(2L);
+
+        // With an active embargo, a restricted file should have the same access regardless of
+        // embargo state (with an active embargo, there's no way to request permissions,
+        // so the hasPermission=true case primarily applies to the original dataset
+        // creators)
+
+        Embargo emb = new Embargo(LocalDate.now().plusDays(3), "Still embargoed");
+        dataFile.setEmbargo(emb);
+        DatasetVersion datasetVersion = new DatasetVersion();
+        datasetVersion.setVersionState(DatasetVersion.VersionState.RELEASED);
+
+        FileMetadata fileMetadata = new FileMetadata();
+        fileMetadata.setId(1L);
+        fileMetadata.setRestricted(true);
+        fileMetadata.setDataFile(dataFile);
+        fileMetadata.setDatasetVersion(datasetVersion);
+
+        mockPermissionResponseRequestOn(Permission.DownloadFile, hasPermission);
+        
+        assertEquals(hasPermission, fileDownloadHelper.canDownloadFile(fileMetadata), "Initial response does not match expectation!");
+    }
+    
+    @ParameterizedTest
+    @CsvSource({"false", "true"})
+    void testCanDownloadFile_forRestrictedReleasedFileWithExpiredEmbargo(boolean hasPermission) {
+        DataFile dataFile = new DataFile();
+        dataFile.setId(2L);
+
+        // With an embargo, a restricted file should have the same access regardless of
+        // embargo state (with an active embargo, there's no way to request permissions,
+        // so the hasPermission=true case primarily applies to the original dataset
+        // creators)
+
+        Embargo emb = new Embargo(LocalDate.now().minusDays(3), "No longer embargoed");
+        dataFile.setEmbargo(emb);
+        DatasetVersion datasetVersion = new DatasetVersion();
+        datasetVersion.setVersionState(DatasetVersion.VersionState.RELEASED);
+
+        FileMetadata fileMetadata = new FileMetadata();
+        fileMetadata.setId(1L);
+        fileMetadata.setRestricted(true);
+        fileMetadata.setDataFile(dataFile);
+        fileMetadata.setDatasetVersion(datasetVersion);
+
+        mockPermissionResponseRequestOn(Permission.DownloadFile, hasPermission);
+
+        assertEquals(hasPermission, fileDownloadHelper.canDownloadFile(fileMetadata), "Initial response does not match expectation!");
+
+    }
+
 
     private void mockPermissionResponseUserOn(Permission permission, boolean response) {
         PermissionServiceBean.StaticPermissionQuery staticPermissionQuery = mock(PermissionServiceBean.StaticPermissionQuery.class);

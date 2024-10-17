@@ -6,14 +6,39 @@
 package edu.harvard.iq.dataverse;
 
 import java.io.Serializable;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.OneToOne;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Transient;
+
+import edu.harvard.iq.dataverse.license.License;
+import jakarta.persistence.NamedQueries;
+import jakarta.persistence.NamedQuery;
+
+@NamedQueries({
+    // TermsOfUseAndAccess.findByDatasetVersionIdAndDefaultTerms 
+    // is used to determine if the dataset terms were set by the multi license support update 
+    // as part of the 5.10 release.
+    
+    @NamedQuery(name = "TermsOfUseAndAccess.findByDatasetVersionIdAndDefaultTerms", 
+                query = "SELECT o FROM TermsOfUseAndAccess o, DatasetVersion dv WHERE "
+                        + "dv.id =:id "
+                        + "AND dv.termsOfUseAndAccess.id = o.id "
+                        + "AND o.termsOfUse =:defaultTerms "
+                        + "AND o.confidentialityDeclaration IS null " 
+                        + "AND o.specialPermissions IS null "
+                        + "AND o.restrictions IS null "
+                        + "AND o.citationRequirements IS null "
+                        + "AND o.depositorRequirements IS null "
+                        + "AND o.conditions IS null "
+                        + "AND o.disclaimer IS null "
+    )
+})
 
 /**
  *
@@ -21,7 +46,10 @@ import javax.persistence.OneToOne;
  * @author skraffmi
  */
 @Entity
+@ValidateTermsOfUseAndAccess
 public class TermsOfUseAndAccess implements Serializable {
+    
+    public static final String DEFAULT_NOTERMS = "This dataset is made available without information on how it can be used. You should communicate with the Contact(s) specified before use.";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -57,10 +85,10 @@ public class TermsOfUseAndAccess implements Serializable {
         this.template = template;
     }
     
-    
-    @Enumerated(EnumType.STRING)
-    private TermsOfUseAndAccess.License license;
-    
+    @ManyToOne
+    @JoinColumn(name="license_id")
+    private License license;
+
     @Column(columnDefinition="TEXT")      
     private String termsOfUse;
     
@@ -116,12 +144,15 @@ public class TermsOfUseAndAccess implements Serializable {
         this.fileAccessRequest = fileAccessRequest;
     }
     
-    public TermsOfUseAndAccess.License getLicense() {
+    public License getLicense() {
         return license;
     }
 
-    public void setLicense(TermsOfUseAndAccess.License license) {
+    public void setLicense(License license) {
         this.license = license;
+        if(license!=null) {
+            clearCustomTermsVariables();
+        }
     }
 
     public String getTermsOfUse() {
@@ -249,38 +280,50 @@ public class TermsOfUseAndAccess implements Serializable {
 
         TermsOfUseAndAccess retVal = new TermsOfUseAndAccess();
         retVal.setAvailabilityStatus(this.getAvailabilityStatus());
-        retVal.setCitationRequirements(this.getCitationRequirements());
-        retVal.setConditions(this.getConditions());
-        retVal.setConfidentialityDeclaration(this.getConfidentialityDeclaration());
         retVal.setContactForAccess(this.getContactForAccess());
         retVal.setDataAccessPlace(this.getDataAccessPlace());
-        retVal.setDepositorRequirements(this.getDepositorRequirements());
-        retVal.setDisclaimer(this.getDisclaimer());
-        retVal.setLicense(this.getLicense());
         retVal.setOriginalArchive(this.getOriginalArchive());
-        retVal.setRestrictions(this.getRestrictions());
         retVal.setSizeOfCollection(this.getSizeOfCollection());
-        retVal.setSpecialPermissions(this.getSpecialPermissions());
         retVal.setStudyCompletion(this.getStudyCompletion());
         retVal.setTermsOfAccess(this.getTermsOfAccess());
-        retVal.setTermsOfUse(this.getTermsOfUse());
         retVal.setFileAccessRequest(this.isFileAccessRequest());
+        retVal.setLicense(this.getLicense());
+        if (license == null) {
+            retVal.setTermsOfUse(this.getTermsOfUse());
+            retVal.setConfidentialityDeclaration(this.getConfidentialityDeclaration());
+            retVal.setSpecialPermissions(this.getSpecialPermissions());
+            retVal.setRestrictions(this.getRestrictions());
+            retVal.setCitationRequirements(this.getCitationRequirements());
+            retVal.setDepositorRequirements(this.getDepositorRequirements());
+            retVal.setConditions(this.getConditions());
+            retVal.setDisclaimer(this.getDisclaimer());
+        }
 
         return retVal;
     }
 
-    
-        
-    public enum License {
-        NONE, CC0
+    private void clearCustomTermsVariables(){
+        termsOfUse = null;
+        confidentialityDeclaration = null;
+        specialPermissions = null;
+        restrictions = null;
+        citationRequirements = null;
+        depositorRequirements = null;
+        conditions = null;
+        disclaimer = null;
     }
     
-        /**
-     * @todo What does the GUI use for a default license? What does the "native"
-     * API use? See also https://github.com/IQSS/dataverse/issues/1385
-     */
-    public static TermsOfUseAndAccess.License defaultLicense = TermsOfUseAndAccess.License.CC0;
+    @Transient
+    private String validationMessage;
 
+    public String getValidationMessage() {
+        return validationMessage;
+    }
+
+    public void setValidationMessage(String validationMessage) {
+        this.validationMessage = validationMessage;
+    }
+    
     @Override
     public int hashCode() {
         int hash = 0;

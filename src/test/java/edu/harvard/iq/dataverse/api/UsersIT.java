@@ -1,38 +1,43 @@
 package edu.harvard.iq.dataverse.api;
 
-import com.jayway.restassured.RestAssured;
-import static com.jayway.restassured.RestAssured.given;
-import com.jayway.restassured.http.ContentType;
-import com.jayway.restassured.path.json.JsonPath;
-import com.jayway.restassured.response.Response;
+import io.restassured.RestAssured;
+import static io.restassured.RestAssured.given;
+import io.restassured.http.ContentType;
+import io.restassured.path.json.JsonPath;
+import io.restassured.response.Response;
+import edu.harvard.iq.dataverse.authorization.DataverseRole;
 import edu.harvard.iq.dataverse.settings.SettingsServiceBean;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
-import javax.json.Json;
-import javax.json.JsonObjectBuilder;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.CREATED;
-import static javax.ws.rs.core.Response.Status.NOT_FOUND;
-import static javax.ws.rs.core.Response.Status.OK;
-import static javax.ws.rs.core.Response.Status.UNAUTHORIZED;
-import static junit.framework.Assert.assertEquals;
+import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.CREATED;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
+import static jakarta.ws.rs.core.Response.Status.OK;
+import static jakarta.ws.rs.core.Response.Status.UNAUTHORIZED;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
-import static org.junit.Assert.assertTrue;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import static org.hamcrest.Matchers.contains;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.hamcrest.CoreMatchers;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 public class UsersIT {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RestAssured.baseURI = UtilIT.getRestAssuredBaseUri();
-        
+       /* 
         Response removeAllowApiTokenLookupViaApi = UtilIT.deleteSetting(SettingsServiceBean.Key.AllowApiTokenLookupViaApi);
         removeAllowApiTokenLookupViaApi.then().assertThat()
                 .statusCode(200);
-
+*/
     }
     
     @Test
@@ -160,7 +165,7 @@ public class UsersIT {
         Integer tabFile3IdRestrictedNew = JsonPath.from(tab3AddResponse.body().asString()).getInt("data.files[0].dataFile.id");
         
         //Sleep while dataset locked for ingest
-        assertTrue("Failed test if Ingest Lock exceeds max duration " + tabFile3NameRestrictedNew , UtilIT.sleepForLock(datasetIdNew.longValue(), "Ingest", superuserApiToken, UtilIT.MAXIMUM_INGEST_LOCK_DURATION));
+        assertTrue(UtilIT.sleepForLock(datasetIdNew.longValue(), "Ingest", superuserApiToken, UtilIT.MAXIMUM_INGEST_LOCK_DURATION), "Failed test if Ingest Lock exceeds max duration " + tabFile3NameRestrictedNew);
 
         Response restrictResponse = UtilIT.restrictFile(tabFile3IdRestrictedNew.toString(), true, superuserApiToken);
         restrictResponse.prettyPrint();
@@ -204,15 +209,13 @@ public class UsersIT {
         String aliasInOwner = "groupFor" + dataverseAlias;
         String displayName = "Group for " + dataverseAlias;
         String user2identifier = "@" + usernameConsumed;
+        String target2identifier = "@" + targetname;
         Response createGroup = UtilIT.createGroup(dataverseAlias, aliasInOwner, displayName, superuserApiToken);
         createGroup.prettyPrint();
         createGroup.then().assertThat()
                 .statusCode(CREATED.getStatusCode());
 
-        String groupIdentifier = JsonPath.from(createGroup.asString()).getString("data.identifier");
-
-        List<String> roleAssigneesToAdd = new ArrayList<>();
-        roleAssigneesToAdd.add(user2identifier);
+        List<String> roleAssigneesToAdd = Arrays.asList(user2identifier, target2identifier);
         Response addToGroup = UtilIT.addToGroup(dataverseAlias, aliasInOwner, roleAssigneesToAdd, superuserApiToken);
         addToGroup.prettyPrint();
         addToGroup.then().assertThat()
@@ -370,23 +373,33 @@ public class UsersIT {
                 .body("data.message", containsString(userApiToken))
                 .body("data.message", containsString("expires on"));
 
+        // Recreate given a bad API token
         Response recreateToken = UtilIT.recreateToken("BAD-Token-blah-89234");
         recreateToken.prettyPrint();
         recreateToken.then().assertThat()
                 .statusCode(UNAUTHORIZED.getStatusCode());
 
+        // Recreate given a valid API token
         recreateToken = UtilIT.recreateToken(userApiToken);
         recreateToken.prettyPrint();
         recreateToken.then().assertThat()
                 .statusCode(OK.getStatusCode())
-                .body("data.message", containsString("New token for"));
+                .body("data.message", containsString("New token for"))
+                .body("data.message", CoreMatchers.not(containsString("and expires on")));
 
+        // Recreate given a valid API token and returning expiration
         createUser = UtilIT.createRandomUser();
-        createUser.prettyPrint();
-        assertEquals(200, createUser.getStatusCode());
+        assertEquals(OK.getStatusCode(), createUser.getStatusCode());
 
-        String userApiTokenForDelete = UtilIT.getApiTokenFromResponse(createUser);
-        
+        userApiToken =  UtilIT.getApiTokenFromResponse(createUser);
+
+        recreateToken = UtilIT.recreateToken(userApiToken, true);
+        recreateToken.prettyPrint();
+        recreateToken.then().assertThat()
+                .statusCode(OK.getStatusCode())
+                .body("data.message", containsString("New token for"))
+                .body("data.message", containsString("and expires on"));
+
         /*
         Add tests for Private URL
         */
@@ -402,7 +415,7 @@ public class UsersIT {
         createDatasetResponse.prettyPrint();
         Integer datasetId = JsonPath.from(createDatasetResponse.body().asString()).getInt("data.id");
         
-        Response createPrivateUrl = UtilIT.privateUrlCreate(datasetId, apiToken);
+        Response createPrivateUrl = UtilIT.privateUrlCreate(datasetId, apiToken, false);
         createPrivateUrl.prettyPrint();
         assertEquals(OK.getStatusCode(), createPrivateUrl.getStatusCode());
 
@@ -417,6 +430,10 @@ public class UsersIT {
         getExpiration.then().assertThat()
                 .statusCode(NOT_FOUND.getStatusCode());
 
+        createUser = UtilIT.createRandomUser();
+        assertEquals(OK.getStatusCode(), createUser.getStatusCode());
+
+        String userApiTokenForDelete = UtilIT.getApiTokenFromResponse(createUser);
 
         Response deleteToken = UtilIT.deleteToken(userApiTokenForDelete);
         deleteToken.prettyPrint();
@@ -430,6 +447,73 @@ public class UsersIT {
         getExpiration.then().assertThat()
                 .statusCode(UNAUTHORIZED.getStatusCode());
         
+    }
+    
+    @Test
+    public void testDeleteAuthenticatedUser() {
+
+        Response createSuperuser = UtilIT.createRandomUser();
+        String superuserUsername = UtilIT.getUsernameFromResponse(createSuperuser);
+        String superuserApiToken = UtilIT.getApiTokenFromResponse(createSuperuser);
+        Response toggleSuperuser = UtilIT.makeSuperUser(superuserUsername);
+        toggleSuperuser.then().assertThat()
+                .statusCode(OK.getStatusCode());
+
+        Response createUser = UtilIT.createRandomUser();
+        createUser.prettyPrint();
+        String usernameForCreateDV = UtilIT.getUsernameFromResponse(createUser);
+        String normalApiToken = UtilIT.getApiTokenFromResponse(createUser);
+
+        Response createDataverse = UtilIT.createRandomDataverse(normalApiToken);
+        createDataverse.prettyPrint();
+        createDataverse.then().assertThat()
+                .statusCode(CREATED.getStatusCode());
+        String dataverseAlias = UtilIT.getAliasFromResponse(createDataverse);
+
+        createUser = UtilIT.createRandomUser();
+        createUser.prettyPrint();
+        String usernameForAssignedRole = UtilIT.getUsernameFromResponse(createUser);
+        String roleApiToken = UtilIT.getApiTokenFromResponse(createUser);
+
+        Response assignRole = UtilIT.grantRoleOnDataverse(dataverseAlias, DataverseRole.EDITOR.toString(),
+                "@" + usernameForAssignedRole, superuserApiToken);
+
+        //Shouldn't be able to delete user with a role
+        Response deleteUserRole = UtilIT.deleteUser(usernameForAssignedRole);
+
+        deleteUserRole.prettyPrint();
+        deleteUserRole.then().assertThat()
+                .statusCode(BAD_REQUEST.getStatusCode())
+                .body("message", equalTo("Could not delete Authenticated User @" + usernameForAssignedRole + " because the user is associated with role assignment record(s)."));
+
+        //Shouldn't be able to delete a user who has created a DV
+        Response deleteUserCreateDV = UtilIT.deleteUser(usernameForCreateDV);
+
+        deleteUserCreateDV.prettyPrint();
+        deleteUserCreateDV.then().assertThat()
+                .statusCode(BAD_REQUEST.getStatusCode())
+                .body("message", equalTo("Could not delete Authenticated User @" + usernameForCreateDV + " because the user has created Dataverse object(s); the user is associated with role assignment record(s)."));
+
+        Response deleteDataverse = UtilIT.deleteDataverse(dataverseAlias, normalApiToken);
+        deleteDataverse.prettyPrint();
+        deleteDataverse.then().assertThat()
+                .statusCode(OK.getStatusCode());
+
+        Response deleteUserAfterDeleteDV = UtilIT.deleteUser(usernameForCreateDV);
+        //Should be able to delete user after dv is deleted
+        deleteUserAfterDeleteDV.prettyPrint();
+        deleteUserAfterDeleteDV.then().assertThat()
+                .statusCode(OK.getStatusCode());
+
+        deleteUserAfterDeleteDV = UtilIT.deleteUser(usernameForAssignedRole);
+        //Should be able to delete user after dv is deleted role should be gone as well
+        deleteUserAfterDeleteDV.prettyPrint();
+        deleteUserAfterDeleteDV.then().assertThat()
+                .statusCode(OK.getStatusCode());
+
+        Response deleteSuperuser = UtilIT.deleteUser(superuserUsername);
+        assertEquals(200, deleteSuperuser.getStatusCode());
+
     }
 
     private Response convertUserFromBcryptToSha1(long idOfBcryptUserToConvert, String password) {

@@ -14,7 +14,6 @@ import edu.harvard.iq.dataverse.RoleAssignment;
 import edu.harvard.iq.dataverse.UserNotification;
 import edu.harvard.iq.dataverse.authorization.AuthenticatedUserLookup;
 import edu.harvard.iq.dataverse.authorization.providers.builtin.BuiltinUser;
-import edu.harvard.iq.dataverse.authorization.providers.oauth2.OAuth2TokenData;
 import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import edu.harvard.iq.dataverse.batch.util.LoggingUtil;
@@ -57,7 +56,15 @@ public class MergeInAccountCommand extends AbstractVoidCommand {
     
     @Override
     protected void executeImpl(CommandContext ctxt) throws CommandException {
-        
+
+        if (consumedAU.getId() == ongoingAU.getId()) {
+            throw new IllegalCommandException("You cannot merge an account into itself.", this);
+        }
+
+        if (consumedAU.isDeactivated() && !ongoingAU.isDeactivated() || !consumedAU.isDeactivated() && ongoingAU.isDeactivated()) {
+            throw new IllegalCommandException("User accounts can only be merged if they are either both active or both deactivated.", this);
+        }
+
         List<RoleAssignment> baseRAList = ctxt.roleAssignees().getAssignmentsFor(ongoingAU.getIdentifier());
         List<RoleAssignment> consumedRAList = ctxt.roleAssignees().getAssignmentsFor(consumedAU.getIdentifier());
         
@@ -155,6 +162,7 @@ public class MergeInAccountCommand extends AbstractVoidCommand {
         
         //ConfirmEmailData  
         
+        // todo: the deletion should be handed down to the service!
         ConfirmEmailData confirmEmailData = ctxt.confirmEmail().findSingleConfirmEmailDataByUser(consumedAU); 
         if (confirmEmailData != null){
             ctxt.em().remove(confirmEmailData);
@@ -167,6 +175,7 @@ public class MergeInAccountCommand extends AbstractVoidCommand {
         
         ctxt.em().createNativeQuery("Delete from OAuth2TokenData where user_id ="+consumedAU.getId()).executeUpdate();
         
+        ctxt.em().createNativeQuery("DELETE FROM explicitgroup_authenticateduser consumed USING explicitgroup_authenticateduser ongoing WHERE consumed.containedauthenticatedusers_id="+ongoingAU.getId()+" AND ongoing.containedauthenticatedusers_id="+consumedAU.getId()).executeUpdate();
         ctxt.em().createNativeQuery("UPDATE explicitgroup_authenticateduser SET containedauthenticatedusers_id="+ongoingAU.getId()+" WHERE containedauthenticatedusers_id="+consumedAU.getId()).executeUpdate();
         
         ctxt.actionLog().changeUserIdentifierInHistory(consumedAU.getIdentifier(), ongoingAU.getIdentifier());
@@ -184,8 +193,8 @@ public class MergeInAccountCommand extends AbstractVoidCommand {
         ctxt.em().remove(consumedAUL);
         ctxt.em().remove(consumedAU);
         BuiltinUser consumedBuiltinUser = ctxt.builtinUsers().findByUserName(consumedAU.getUserIdentifier());
-        if (consumedBuiltinUser != null){
-            ctxt.em().remove(consumedBuiltinUser); 
+        if (consumedBuiltinUser != null) {
+            ctxt.builtinUsers().removeUser(consumedBuiltinUser.getUserName());
         }
         
         

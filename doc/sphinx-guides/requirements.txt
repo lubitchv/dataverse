@@ -1,2 +1,18 @@
-# match version used by Jenkins
-Sphinx==1.5.6
+Sphinx==7.4.0
+
+# inline icons
+sphinx-icon==0.1.2
+
+# Markdown support
+myst-parser==4.0.0
+
+# tabs
+sphinx-tabs==3.4.5
+
+# jQuery
+sphinxcontrib-jquery
+
+Sphinx-Substitution-Extensions==2025.1.2
+semver>=3,<4
+
+sphinx-reredirects==1.1.0

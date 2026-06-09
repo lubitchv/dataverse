@@ -7,31 +7,32 @@ import edu.harvard.iq.dataverse.DatasetVersion;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import static edu.harvard.iq.dataverse.mocks.MocksFactory.makeAuthenticatedUser;
 import java.io.UnsupportedEncodingException;
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
+import jakarta.json.Json;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
 import org.apache.http.HttpResponseFactory;
 import org.apache.http.HttpStatus;
 import org.apache.http.HttpVersion;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.DefaultHttpResponseFactory;
 import org.apache.http.message.BasicStatusLine;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import org.junit.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import org.junit.jupiter.api.Test;
 
 public class DataCaptureModuleUtilTest {
 
     @Test
     public void testRsyncSupportEnabled() {
         System.out.println("rsyncSupportEnabled");
-        assertEquals(false, DataCaptureModuleUtil.rsyncSupportEnabled(null));
-        assertEquals(true, DataCaptureModuleUtil.rsyncSupportEnabled("dcm/rsync+ssh"));
+        assertFalse(DataCaptureModuleUtil.rsyncSupportEnabled(null));
+        assertTrue(DataCaptureModuleUtil.rsyncSupportEnabled("dcm/rsync+ssh"));
         // Comma sepratated lists of upload methods are supported.
-        assertEquals(false, DataCaptureModuleUtil.rsyncSupportEnabled("native/http:dcm/rsync+ssh"));
-        assertEquals(true, DataCaptureModuleUtil.rsyncSupportEnabled("native/http,dcm/rsync+ssh"));
-        assertEquals(false, DataCaptureModuleUtil.rsyncSupportEnabled("native/http"));
-        assertEquals(false, DataCaptureModuleUtil.rsyncSupportEnabled("junk"));
+        assertFalse(DataCaptureModuleUtil.rsyncSupportEnabled("native/http:dcm/rsync+ssh"));
+        assertTrue(DataCaptureModuleUtil.rsyncSupportEnabled("native/http,dcm/rsync+ssh"));
+        assertFalse(DataCaptureModuleUtil.rsyncSupportEnabled("native/http"));
+        assertFalse(DataCaptureModuleUtil.rsyncSupportEnabled("junk"));
     }
 
     @Test

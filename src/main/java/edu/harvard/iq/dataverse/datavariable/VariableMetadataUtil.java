@@ -1,6 +1,36 @@
 package edu.harvard.iq.dataverse.datavariable;
 
+import edu.harvard.iq.dataverse.FileMetadata;
+
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+
 public class VariableMetadataUtil {
+
+    public static boolean compareVariableMetadata(FileMetadata fmdo, FileMetadata fmdn) {
+        Collection<VariableMetadata> vmlo = fmdo.getVariableMetadatas();
+        Collection<VariableMetadata> vmln = fmdn.getVariableMetadatas();
+    
+        if (vmlo.size() != vmln.size()) {
+            return false;
+        }
+    
+        Map<Long, VariableMetadata> vmnMap = new HashMap<>();
+        for (VariableMetadata vmn : vmln) {
+            vmnMap.put(vmn.getDataVariable().getId(), vmn);
+        }
+    
+        for (VariableMetadata vmo : vmlo) {
+            Long id = vmo.getDataVariable().getId();
+            VariableMetadata vmn = vmnMap.get(id);
+            if (vmn == null || !compareVarMetadata(vmo, vmn)) {
+                return false;
+            }
+        }
+    
+        return true;
+    }
 
     public static boolean  compareVarMetadata(VariableMetadata vmOld, VariableMetadata vmNew) {
         boolean thesame = true;

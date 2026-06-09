@@ -5,39 +5,46 @@
  */
 package edu.harvard.iq.dataverse;
 
+import edu.harvard.iq.dataverse.DataverseRoleServiceBean.RoleAssignmentHistoryConsolidatedEntry;
+import edu.harvard.iq.dataverse.api.Util;
 import edu.harvard.iq.dataverse.authorization.AuthenticationProvider;
 import edu.harvard.iq.dataverse.authorization.AuthenticationServiceBean;
 import edu.harvard.iq.dataverse.authorization.DataverseRole;
 import edu.harvard.iq.dataverse.authorization.Permission;
 import edu.harvard.iq.dataverse.authorization.RoleAssignee;
 import edu.harvard.iq.dataverse.authorization.RoleAssigneeDisplayInfo;
-import edu.harvard.iq.dataverse.authorization.groups.Group;
 import edu.harvard.iq.dataverse.authorization.groups.GroupServiceBean;
 import edu.harvard.iq.dataverse.authorization.groups.impl.explicit.ExplicitGroupServiceBean;
+import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
+import edu.harvard.iq.dataverse.authorization.users.User;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
 import edu.harvard.iq.dataverse.engine.command.exception.PermissionException;
 import edu.harvard.iq.dataverse.engine.command.impl.AssignRoleCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.RevokeRoleCommand;
+import edu.harvard.iq.dataverse.settings.JvmSettings;
 import edu.harvard.iq.dataverse.util.BundleUtil;
+import edu.harvard.iq.dataverse.util.DateUtil;
 import edu.harvard.iq.dataverse.util.JsfHelper;
+import edu.harvard.iq.dataverse.util.SystemConfig;
+import edu.harvard.iq.dataverse.util.UrlSignerUtil;
+
 import static edu.harvard.iq.dataverse.util.JsfHelper.JH;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.faces.application.FacesMessage;
-import javax.faces.event.ActionEvent;
-import javax.faces.view.ViewScoped;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import org.apache.commons.lang.StringUtils;
-import org.primefaces.event.SelectEvent;
-import org.primefaces.event.ToggleSelectEvent;
-import org.primefaces.event.UnselectEvent;
+import java.util.stream.Collectors;
+
+import jakarta.ejb.EJB;
+import jakarta.faces.application.FacesMessage;
+import jakarta.faces.event.ActionEvent;
+import jakarta.faces.view.ViewScoped;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import org.apache.commons.lang3.ObjectUtils;
 
 /**
  *
@@ -73,6 +80,8 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
     DataverseRequestServiceBean dvRequestService;
     @Inject
     PermissionsWrapper permissionsWrapper;
+    @EJB
+    FileAccessRequestServiceBean fileAccessRequestService;
     
     @PersistenceContext(unitName = "VDCNet-ejbPU")
     EntityManager em;
@@ -83,7 +92,39 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
     Dataset dataset = new Dataset(); 
     private final TreeMap<RoleAssignee,List<RoleAssignmentRow>> roleAssigneeMap = new TreeMap<>();
     private final TreeMap<DataFile,List<RoleAssignmentRow>> fileMap = new TreeMap<>();
-    private final TreeMap<AuthenticatedUser,List<DataFile>> fileAccessRequestMap = new TreeMap<>();    
+
+    public TreeMap<AuthenticatedUser, List<FileAccessRequest>> getFileAccessRequestMap() {
+        return fileAccessRequestMap;
+    }
+    
+    public List<DataFile> getDataFilesForRequestor() {
+        List<FileAccessRequest> fars = fileAccessRequestMap.get(getFileRequester());
+        if (fars == null) {
+            return new ArrayList<>();
+        } else {
+            return fars.stream().map(FileAccessRequest::getDataFile).collect(Collectors.toList());
+        }
+    }
+
+    private final TreeMap<AuthenticatedUser,List<FileAccessRequest>> fileAccessRequestMap = new TreeMap<>();
+    private boolean showDeleted = true;
+
+    public boolean isShowDeleted() {
+        return showDeleted;
+    }
+
+    public void setShowDeleted(boolean showDeleted) {
+        this.showDeleted = showDeleted;
+    }
+    private boolean showHistory = false;
+
+    public boolean isShowHistory() {
+        return showHistory;
+    }
+
+    public void setShowHistory(boolean showHistory) {
+        this.showHistory = showHistory;
+    }
 
     public Dataset getDataset() {
         return dataset;
@@ -101,11 +142,24 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
         return fileMap;
     }
 
-    public TreeMap<AuthenticatedUser, List<DataFile>> getFileAccessRequestMap() {
-        return fileAccessRequestMap;
+    private boolean backingShowDeleted = true;
+
+    public void showDeletedCheckboxChange() {
+
+        if (backingShowDeleted != showDeleted) {
+            initMaps();
+            backingShowDeleted = showDeleted;
+        }
+
     }
-    
-    
+    private boolean backingShowHistory = false;
+    public void showHistoryCheckboxChange() {
+        if (backingShowHistory != showHistory) {
+            initMaps();
+            backingShowHistory = showHistory;
+        }
+    }
+
     public String init() {
         if (dataset.getId() != null) {
             dataset = datasetService.find(dataset.getId());
@@ -116,57 +170,118 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
             return permissionsWrapper.notFound();
         }
 
-        if (!permissionService.on(dataset).has(Permission.ManageDatasetPermissions)) {
+        if (!permissionService.on(dataset).has(Permission.ManageFilePermissions)) {
             return permissionsWrapper.notAuthorized();
         }
         initMaps();
+
         return "";
     }
-    
+
     private void initMaps() {
         // initialize files and usergroup list
         roleAssigneeMap.clear();
         fileMap.clear();
-        fileAccessRequestMap.clear();        
-               
+        fileAccessRequestMap.clear();
+        roleAssignmentHistory = null;
+
         for (DataFile file : dataset.getFiles()) {
-            // only include if the file is restricted (or it's draft version is restricted)
-            //Added a null check in case there are files that have no metadata records SEK 
+
+            // only include if the file is restricted (or its draft version is restricted)
+            //Added a null check in case there are files that have no metadata records SEK
+            //for 6587 make sure that a file is in the current version befor adding to the fileMap SEK 2/11/2020
                 if (file.getFileMetadata() != null && (file.isRestricted() || file.getFileMetadata().isRestricted())) {
+                    //only test if file is deleted if it's restricted
+                    boolean fileIsDeleted = !((dataset.getLatestVersion().isDraft() && file.getFileMetadata().getDatasetVersion().isDraft())
+                            || (dataset.getLatestVersion().isReleased() && file.getFileMetadata().getDatasetVersion().equals(dataset.getLatestVersion())));
+
+                    if (!isShowDeleted() && fileIsDeleted) {
+                        //if don't show deleted and is deleted go to next file...
+                        continue;
+                    }
                 // we get the direct role assignments assigned to the file
                 List<RoleAssignment> ras = roleService.directRoleAssignments(file);
                 List<RoleAssignmentRow> raList = new ArrayList<>(ras.size());
                 for (RoleAssignment ra : ras) {
                     // for files, only show role assignments which can download
                     if (ra.getRole().permissions().contains(Permission.DownloadFile)) {
-                        raList.add(new RoleAssignmentRow(ra, roleAssigneeService.getRoleAssignee(ra.getAssigneeIdentifier(), true).getDisplayInfo()));                   
-                        addFileToRoleAssignee(ra);                    
+                        raList.add(new RoleAssignmentRow(ra, roleAssigneeService.getRoleAssignee(ra.getAssigneeIdentifier(), true).getDisplayInfo(), fileIsDeleted));
+                        addFileToRoleAssignee(ra, fileIsDeleted);
                     }
                 }
-                
+
+                file.setDeleted(fileIsDeleted);
+
                 fileMap.put(file, raList);
-                
+
                 // populate the file access requests map
-                for (AuthenticatedUser au : file.getFileAccessRequesters()) {
-                        List<DataFile> requestedFiles = fileAccessRequestMap.get(au);
-                        if (requestedFiles == null) {
-                            requestedFiles = new ArrayList<>();
-                            AuthenticatedUser withProvider = authenticationService.getAuthenticatedUserWithProvider(au.getUserIdentifier());                           
-                            fileAccessRequestMap.put(withProvider, requestedFiles);
-                        }
-                        requestedFiles.add(file);                                       
+                for (FileAccessRequest fileAccessRequest : !showHistory ? file.getFileAccessRequests(FileAccessRequest.RequestState.CREATED) : file.getFileAccessRequests()) {
+                    List<FileAccessRequest> fileAccessRequestList = fileAccessRequestMap.get(fileAccessRequest.getRequester());
+                    if (fileAccessRequestList == null) {
+                        fileAccessRequestList = new ArrayList<>();
+                        AuthenticatedUser withProvider = authenticationService.getAuthenticatedUserWithProvider(fileAccessRequest.getRequester().getUserIdentifier());
+                        fileAccessRequestMap.put(withProvider, fileAccessRequestList);
+                    }
+                    fileAccessRequestList.add(fileAccessRequest);
                 }
-            }  
+            }
         }
-        
     }
-    
+
     public String getAuthProviderFriendlyName(String authProviderId){
-        
         return AuthenticationProvider.getFriendlyName(authProviderId);
     }
-    
-    private void addFileToRoleAssignee(RoleAssignment assignment) {
+
+    Date getAccessRequestDate(List<FileAccessRequest> fileAccessRequests){
+        if (fileAccessRequests == null) {
+            return null;
+        }
+
+        // find the oldest date in the list of available and return a formatted date, or null if no dates were found
+        return fileAccessRequests.stream()
+            .filter(fileAccessRequest -> fileAccessRequest.getCreationTime() != null)
+            .min((a, b) -> ObjectUtils.compare(a.getCreationTime(), b.getCreationTime(), true))
+            .map(FileAccessRequest::getCreationTime)
+            .orElse(null);
+    }
+
+    public String formatAccessRequestDate(List<FileAccessRequest> fileAccessRequests){
+        Date date = getAccessRequestDate(fileAccessRequests);
+
+        if (date == null) {
+            return null;
+        }
+
+        return DateUtil.formatDate(date);
+    }
+
+
+    public String formatAccessRequestTimestamp(List<FileAccessRequest> fileAccessRequests){
+        Date date = getAccessRequestDate(fileAccessRequests);
+
+        if (date == null) {
+            return null;
+        }
+
+        return Util.getDateTimeFormat().format(date);
+    }
+
+    public String getAccessRequestStates(List<FileAccessRequest> fileAccessRequests) {
+        String result = "";
+        if (fileAccessRequests != null) {
+            Map<String, Long> items = fileAccessRequests.stream()
+                    .sorted(Comparator.comparing(FileAccessRequest::getState))
+                    .collect(Collectors.groupingBy(
+                            FileAccessRequest::getStateLabelNationalized,
+                            Collectors.counting()));
+
+            result = items.entrySet().stream().map(entry -> entry.getKey() + ":" + entry.getValue())
+                    .collect(Collectors.joining(", ", "[ ", " ]"));
+        }
+        return result;
+    }
+
+    private void addFileToRoleAssignee(RoleAssignment assignment, boolean fileDeleted) {
         RoleAssignee ra = roleAssigneeService.getRoleAssignee(assignment.getAssigneeIdentifier());
         List<RoleAssignmentRow> assignments = roleAssigneeMap.get(ra);
         if (assignments == null) {
@@ -174,7 +289,7 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
             roleAssigneeMap.put(ra, assignments);
         }
         
-        assignments.add(new RoleAssignmentRow(assignment, ra.getDisplayInfo()));
+        assignments.add(new RoleAssignmentRow(assignment, ra.getDisplayInfo(), fileDeleted));
     }
 
     /* 
@@ -299,6 +414,10 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
 
 
     public void initAssignDialog(ActionEvent ae) {
+
+        showDeleted = false;
+        initMaps();
+
         fileRequester = null;
         selectedRoleAssignees = null;
         selectedFiles.clear();
@@ -306,6 +425,8 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
     }
     
     public void initAssignDialogByFile(DataFile file) {
+        showDeleted = false;
+        initMaps();
         fileRequester = null;
         selectedRoleAssignees = null;
         selectedFiles.clear();
@@ -316,7 +437,10 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
         fileRequester = au;
         selectedRoleAssignees = null;
         selectedFiles.clear();
-        selectedFiles.addAll(fileAccessRequestMap.get(au));    
+
+        for (FileAccessRequest fileAccessRequest : fileAccessRequestMap.get(au)) {
+            selectedFiles.add(fileAccessRequest.getDataFile());
+        }
         showUserGroupMessages();
     }     
     
@@ -335,12 +459,17 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
                     if (file.isReleased()) {
                         sendNotification = true;
                     }
-                    // remove request, if it exist
-                    if (file.getFileAccessRequesters().remove(roleAssignee)) {
-                        datafileService.save(file);
-                    }                  
-                }               
-            
+                    // set request(s) granted, if they exist
+                    for (AuthenticatedUser au : roleAssigneeService.getExplicitUsers(roleAssignee)) {
+                        FileAccessRequest far = file.getAccessRequestForAssignee(au);
+                        //There may not be a request, so do the null check
+                        if (far != null) {
+                            far.setStateGranted();
+                        }
+                    }
+                    datafileService.save(file);
+                }
+
             }
 
             if (sendNotification) {
@@ -349,7 +478,7 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
                 }
              }
         }
-        
+
         initMaps();
     }
     
@@ -358,23 +487,33 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
     }
     
     public void grantAccessToAllRequests(AuthenticatedUser au) {
-        grantAccessToRequests(au, fileAccessRequestMap.get(au));
-    }    
+        List<DataFile> files = new ArrayList<>();
+
+        for (FileAccessRequest fileAccessRequest : fileAccessRequestMap.get(au)) {
+            files.add(fileAccessRequest.getDataFile());
+        }
+
+        grantAccessToRequests(au, files);
+    }
 
     private void grantAccessToRequests(AuthenticatedUser au, List<DataFile> files) {
         boolean actionPerformed = false;
         // Find the built in file downloader role (currently by alias) 
         DataverseRole fileDownloaderRole = roleService.findBuiltinRoleByAlias(DataverseRole.FILE_DOWNLOADER);
         for (DataFile file : files) {
-            if (assignRole(au, file, fileDownloaderRole)) {                
-                file.getFileAccessRequesters().remove(au);
-                datafileService.save(file);
+            if (assignRole(au, file, fileDownloaderRole)) {
+                FileAccessRequest far = file.getAccessRequestForAssignee(au);
+                if (far!=null) {
+                    far.setStateGranted();
+                    datafileService.save(file);
+                }
                 actionPerformed = true;
             }
         }
+
         if (actionPerformed) {
             JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("permission.fileAccessGranted", Arrays.asList(au.getDisplayInfo().getTitle())));
-            userNotificationService.sendNotification(au, new Timestamp(new Date().getTime()), UserNotification.Type.GRANTFILEACCESS, dataset.getId()); 
+            userNotificationService.sendNotification(au, new Timestamp(new Date().getTime()), UserNotification.Type.GRANTFILEACCESS, dataset.getId());
             initMaps();
         }
 
@@ -385,24 +524,34 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
     }
     
     public void rejectAccessToAllRequests(AuthenticatedUser au) {
-        rejectAccessToRequests(au, fileAccessRequestMap.get(au));
-    }    
+        List<DataFile> files = new ArrayList<>();
+
+        for (FileAccessRequest fileAccessRequest : fileAccessRequestMap.get(au)) {
+            files.add(fileAccessRequest.getDataFile());
+        }
+
+        rejectAccessToRequests(au, files);
+    }
 
     private void rejectAccessToRequests(AuthenticatedUser au, List<DataFile> files) {
-        boolean actionPerformed = false;        
-        for (DataFile file : files) {               
-            file.getFileAccessRequesters().remove(au);
-            datafileService.save(file);
-            actionPerformed = true;
+        boolean actionPerformed = false;
+        for (DataFile file : files) {
+            FileAccessRequest far = file.getAccessRequestForAssignee(au);
+            if(far!=null) {
+                far.setStateRejected();
+                fileAccessRequestService.save(far);
+                file.removeFileAccessRequest(far);
+                datafileService.save(file);
+                actionPerformed = true;
+            }
         }
 
-        
         if (actionPerformed) {
             JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("permission.fileAccessRejected", Arrays.asList(au.getDisplayInfo().getTitle())));
-            userNotificationService.sendNotification(au, new Timestamp(new Date().getTime()), UserNotification.Type.REJECTFILEACCESS, dataset.getId());        
+            userNotificationService.sendNotification(au, new Timestamp(new Date().getTime()), UserNotification.Type.REJECTFILEACCESS, dataset.getId());
             initMaps();
         }
-    }    
+    }
 
     private boolean assignRole(RoleAssignee ra,  DataFile file, DataverseRole r) {
         try {
@@ -428,6 +577,14 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
         return true;
     }
 
+    private List<RoleAssignmentHistoryConsolidatedEntry> roleAssignmentHistory;
+
+    public List<RoleAssignmentHistoryConsolidatedEntry> getRoleAssignmentHistory() {
+        if (roleAssignmentHistory == null) {
+            roleAssignmentHistory = roleService.getFilesRoleAssignmentHistory(dataset.getId());
+        }
+        return roleAssignmentHistory;
+    }
 
     boolean renderUserGroupMessages = false;
     boolean renderFileMessages = false;
@@ -458,7 +615,46 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
         this.renderFileMessages = renderFileMessages;
     }
 
+    public String getSignedUrlForRAHistoryCsv() {
+        //Including /v1 is required for the signature to validate
+        String apiPath = "/api/v1/datasets/" + dataset.getId() + "/files/assignments/history";
+        
+        try {
+            // Get the application URL from the system config
+            String baseUrl = SystemConfig.getDataverseSiteUrlStatic();
+            if (baseUrl.endsWith("/")) {
+                baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+            }
+            
+            // Construct the full URL
+            String fullApiPath = baseUrl + apiPath;
+            
+            // Generate a signed URL with the user's API token
+            User user = session.getUser();
+            String key = null;
+            String userId=null;
+            if (user instanceof AuthenticatedUser authUser) {
+                userId = authUser.getUserIdentifier();
+                ApiToken apiToken = authenticationService.findApiTokenByUser(authUser);
+                if (apiToken != null && !apiToken.isExpired() && !apiToken.isDisabled()) {
+                    key = apiToken.getTokenString();
+                }
+            }
+            key = JvmSettings.API_SIGNING_SECRET.lookupOptional().orElse("") + key;
+            if(key.length() >= 36) {
+                return UrlSignerUtil.signUrl(fullApiPath, 10, userId, "GET", key);
+            }
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "Error generating signed URL for permissions history CSV: " + e.getMessage(), e);
+            return null;
+        }
+        return null;
+    } 
+    public String getPermissionsHistoryFilename() {
+        // For datasets, replace colons in the PID with underscores
+        return dataset.getGlobalId().asString().replace(":", "_") + "_files_permissions_history.csv";
 
+    }
 
 
     // inner class used fordisplay of role assignments
@@ -466,11 +662,27 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
 
         private final RoleAssigneeDisplayInfo assigneeDisplayInfo;
         private final RoleAssignment ra;
+            //Used when a file to which there has been a role assignment added is deleted    
+
+        private final boolean deleted;
+
+        public boolean isDeleted() {
+            return deleted;
+        }
 
         public RoleAssignmentRow(RoleAssignment anRa, RoleAssigneeDisplayInfo disInf) {
             this.ra = anRa;
             this.assigneeDisplayInfo = disInf;
-        }        
+            this.deleted = false;
+        }
+
+        public RoleAssignmentRow(RoleAssignment anRa, RoleAssigneeDisplayInfo disInf, boolean deleted) {
+
+            this.ra = anRa;
+            this.assigneeDisplayInfo = disInf;
+            this.deleted = deleted;
+
+        } 
         
 
         public RoleAssigneeDisplayInfo getAssigneeDisplayInfo() {
@@ -485,6 +697,7 @@ public class ManageFilePermissionsPage implements java.io.Serializable {
         public Long getId() {
             return ra.getId();
         }
+        
     
     }   
 }

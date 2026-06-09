@@ -3,6 +3,7 @@ package edu.harvard.iq.dataverse.workflow;
 import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.authorization.users.ApiToken;
 import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
+import edu.harvard.iq.dataverse.settings.SettingsServiceBean.Key;
 import edu.harvard.iq.dataverse.workflow.step.WorkflowStep;
 
 import java.util.Map;
@@ -20,7 +21,17 @@ import java.util.UUID;
 public class WorkflowContext {
     
     public enum TriggerType {
-        PrePublishDataset, PostPublishDataset
+        PrePublishDataset(Key.PrePublishDatasetWorkflowId),
+        PostPublishDataset(Key.PostPublishDatasetWorkflowId);
+        
+        final Key key;
+        TriggerType(Key key) {
+            this.key = key;
+        }
+        
+        Key getKey() {
+            return key;
+        }
     }
     
     private final DataverseRequest request;
@@ -31,6 +42,7 @@ public class WorkflowContext {
     private final ApiToken apiToken;
     private final boolean datasetExternallyReleased;
     private Map<String, Object> settings;
+    private Long lockId = null;
     
     private String invocationId = UUID.randomUUID().toString();
 
@@ -40,9 +52,13 @@ public class WorkflowContext {
                 aDataset.getLatestVersion().getMinorVersionNumber(),
                 aTriggerType, null, null, datasetExternallyReleased);
     }
-    
     public WorkflowContext(DataverseRequest request, Dataset dataset, long nextVersionNumber, 
-                            long nextMinorVersionNumber, TriggerType type, Map<String, Object> settings, ApiToken apiToken, boolean datasetExternallyReleased) {
+            long nextMinorVersionNumber, TriggerType type, Map<String, Object> settings, ApiToken apiToken, boolean datasetExternallyReleased) {
+        this(request, dataset, nextVersionNumber,nextMinorVersionNumber, type, settings, apiToken, datasetExternallyReleased, null, null);
+    }
+
+    public WorkflowContext(DataverseRequest request, Dataset dataset, long nextVersionNumber, 
+                            long nextMinorVersionNumber, TriggerType type, Map<String, Object> settings, ApiToken apiToken, boolean datasetExternallyReleased, String invocationId, Long lockId) {
         this.request = request;
         this.dataset = dataset;
         this.nextVersionNumber = nextVersionNumber;
@@ -51,6 +67,13 @@ public class WorkflowContext {
         this.settings = settings;
         this.apiToken = apiToken;
         this.datasetExternallyReleased = datasetExternallyReleased;
+        //If null, we'll keep the randomly generated one
+        if(invocationId!=null) {
+            setInvocationId(invocationId);
+        }
+        if(lockId != null) {
+          this.setLockId(lockId);
+        }
     }
 
     public Dataset getDataset() {
@@ -95,6 +118,12 @@ public class WorkflowContext {
 
     public boolean getDatasetExternallyReleased() {
        return datasetExternallyReleased;
+    }
+    public Long getLockId() {
+        return lockId;
+    }
+    public void setLockId(Long lockId) {
+        this.lockId = lockId;
     }
     
 }

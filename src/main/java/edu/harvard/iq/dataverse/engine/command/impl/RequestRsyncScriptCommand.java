@@ -27,6 +27,7 @@ import java.util.logging.Logger;
  * "actiontype" in the actionlogrecord rather than "InternalError" if you throw
  * a CommandExecutionException.
  */
+@Deprecated(forRemoval = true, since = "2024-07-07")
 @RequiredPermissions(Permission.EditDataset)
 public class RequestRsyncScriptCommand extends AbstractCommand<ScriptRequestResponse> {
 
@@ -51,7 +52,7 @@ public class RequestRsyncScriptCommand extends AbstractCommand<ScriptRequestResp
         }
         String dcmBaseUrl = ctxt.settings().getValueForKey(DataCaptureModuleUrl);
         if (dcmBaseUrl == null) {
-            throw new RuntimeException(DataCaptureModuleUrl + " is null!");
+            throw new CommandException("DataCaptureModuleUrl is null!", this);
         }
         User user = request.getUser();
         if (!(user instanceof AuthenticatedUser)) {

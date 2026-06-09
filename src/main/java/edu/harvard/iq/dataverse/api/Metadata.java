@@ -5,17 +5,16 @@
  */
 package edu.harvard.iq.dataverse.api;
 
+import edu.harvard.iq.dataverse.Dataset;
 import edu.harvard.iq.dataverse.DatasetServiceBean;
-import java.util.logging.Logger;
-import javax.ejb.EJB;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Response;
 
-import javax.ws.rs.core.Response;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.PUT;
+import java.util.Date;
+import java.util.logging.Logger;
+import jakarta.ejb.EJB;
+import jakarta.ws.rs.*;
+
+import jakarta.ws.rs.core.Response;
+
 import edu.harvard.iq.dataverse.harvest.server.OAISetServiceBean;
 import edu.harvard.iq.dataverse.harvest.server.OAISet;
 
@@ -56,10 +55,40 @@ public class Metadata extends AbstractApiBean {
     @GET
     @Path("/reExportAll")
     @Produces("application/json")
-    public Response reExportAll() {
-        datasetService.reExportAllAsync();
+    public Response reExportAll(@QueryParam(value = "olderThan") String olderThan) {
+        Date reExportDate = null;
+        if (olderThan != null && !olderThan.isEmpty()) {
+            try {
+                java.text.SimpleDateFormat dateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd");
+                dateFormat.setLenient(false);
+                reExportDate = dateFormat.parse(olderThan);
+            } catch (java.text.ParseException e) {
+                return error(Response.Status.BAD_REQUEST, "Invalid date format for olderThan parameter. Expected format: YYYY-MM-DD");
+            }
+        }
+        datasetService.reExportAllAsync(reExportDate);
         return this.accepted();
-    } 
+    }
+
+    @GET
+    @Path("{id}/reExportDataset")
+    public Response indexDatasetByPersistentId(@PathParam("id") String id) {
+        try {
+            Dataset dataset = findDatasetOrDie(id);
+            datasetService.reExportDatasetAsync(dataset);
+            return ok("export started");
+        } catch (WrappedResponse wr) {
+            return wr.getResponse();
+        }
+    }
+
+    @GET
+    @Path("clearExportTimestamps")
+    public Response clearExportTimestamps() {
+        // only clear the timestamp in the database, cached metadata export files are not deleted
+        int numItemsCleared = datasetService.clearAllExportTimes();
+        return ok("cleared: " + numItemsCleared);
+    }
 
     /**
      * initial attempt at triggering indexing/creation/population of a OAI set without going throught

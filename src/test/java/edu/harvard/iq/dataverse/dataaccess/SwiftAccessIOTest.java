@@ -12,11 +12,10 @@ import java.io.IOException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SignatureException;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import org.junit.Test;
-import static org.junit.Assert.*;
-import org.junit.Before;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
 
 /**
  *
@@ -34,13 +33,14 @@ public class SwiftAccessIOTest {
     public SwiftAccessIOTest() {
     }
 
-    @Before
+    @BeforeEach
     public void setUpClass() throws IOException {
         datafile = MocksFactory.makeDataFile();
         dataset = MocksFactory.makeDataset();
         datafile.setOwner(dataset);
-        datasetAccess = new SwiftAccessIO<>(dataset);
-        datafileAccess = new SwiftAccessIO<>(datafile);
+        String dummyDriverId="dummy";
+        datasetAccess = new SwiftAccessIO<>(dataset, null, dummyDriverId);
+        datafileAccess = new SwiftAccessIO<>(datafile, null, dummyDriverId);
         swiftAccess = new SwiftAccessIO();
     }
 
@@ -51,14 +51,14 @@ public class SwiftAccessIOTest {
      */
     @Test
     public void testPerms() throws IOException {
-        assertEquals(false, datasetAccess.canRead());
-        assertEquals(false, datasetAccess.canWrite());
+        assertFalse(datasetAccess.canRead());
+        assertFalse(datasetAccess.canWrite());
     }
     
     @Test
     public void testIsExpiryExpired() {
         long currentTime = 1502221467;
-        assertEquals(false, swiftAccess.isExpiryExpired(60, 1502281, currentTime));
+        assertFalse(swiftAccess.isExpiryExpired(60, 1502281, currentTime));
     }
     
     @Test

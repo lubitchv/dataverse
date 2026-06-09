@@ -13,14 +13,15 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import javax.ejb.EJB;
-import javax.ejb.Stateless;
-import javax.inject.Named;
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import jakarta.inject.Named;
 import org.passay.CharacterCharacteristicsRule;
 import org.passay.CharacterRule;
 import org.passay.DictionaryRule;
@@ -83,8 +84,7 @@ public class PasswordValidatorServiceBean implements java.io.Serializable {
         GoodStrengthValidator, StandardValidator
     }
 
-    @SuppressWarnings("unchecked")
-    private final static LinkedHashMap<ValidatorTypes, PasswordValidator> validators = new LinkedHashMap(2);
+    private static final Map<ValidatorTypes, PasswordValidator> validators = new LinkedHashMap<>(2);
     private int goodStrength;
     private int maxLength;
     private int minLength;
@@ -100,7 +100,7 @@ public class PasswordValidatorServiceBean implements java.io.Serializable {
     public PasswordValidatorServiceBean() {
         final Properties properties = PropertiesMessageResolver.getDefaultProperties();
         properties.setProperty(GoodStrengthRule.ERROR_CODE_GOODSTRENGTH, GoodStrengthRule.ERROR_MESSAGE_GOODSTRENGTH);
-         messageResolver = new PropertiesMessageResolver(properties);
+        messageResolver = new PropertiesMessageResolver(properties);
     }
 
     public PasswordValidatorServiceBean(List<CharacterRule> characterRules) {
@@ -146,11 +146,9 @@ public class PasswordValidatorServiceBean implements java.io.Serializable {
      * @return A List with error messages. Empty when the password is valid.
      */
     public List<String> validate(String password, Date passwordModificationTime, boolean isHumanReadable) {
-//    public List<String> validate(String password, boolean isHumanReadable) {
 
         init();
-        final PasswordData passwordData = PasswordData.newInstance(password, String.valueOf(passwordModificationTime.getTime()), null);
-//        final PasswordData passwordData = PasswordData.newInstance(password, "username", null);
+        final PasswordData passwordData = new PasswordData(password);
         final RuleResult result = new RuleResult();
 
         for (PasswordValidator currentUser : validators.values()) {

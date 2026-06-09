@@ -1,3 +1,4 @@
+# mime.types is a copy of jakarta.mime.types which only used in unit tests (specifically FileUtilTest.testGZipFile)
 # Common document formats
 application/pdf pdf PDF
 application/msword doc DOC
@@ -7,7 +8,7 @@ text/comma-separated-values csv CSV
 text/plain txt TXT
 text/xml xml XML
 # Common statistical data formats
-text/tab-separated-values tab TAB tsv TSV
+text/tsv tab TAB tsv TSV
 text/x-fixed-field dat DAT asc ASC
 application/x-rlang-transport Rdata RData rdata RDATA
 type/x-r-syntax r R

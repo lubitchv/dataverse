@@ -10,7 +10,6 @@ import java.util.Map;
  * @author ellenk
  */
 public class DatasetVersionDTO {
-    String archiveNote;
     String deacessionLink;
     // FIXME: Change to versionNumberMajor and versionNumberMinor? Some partial renaming of "minor" was done.
     Long versionNumber;
@@ -40,13 +39,15 @@ public class DatasetVersionDTO {
     String studyCompletion;
     boolean fileAccessRequest;
     String citation;
-    String license;
+    LicenseDTO license;
     boolean inReview;
     
     Map<String,MetadataBlockDTO> metadataBlocks;
     List<FileMetadataDTO> fileMetadatas;
     List<FileDTO> files;
 
+    String versionNote;
+    
     public boolean isInReview() {
         return inReview;
     }
@@ -215,14 +216,6 @@ public class DatasetVersionDTO {
         this.files = files;
     }
 
-    public String getArchiveNote() {
-        return archiveNote;
-    }
-
-    public void setArchiveNote(String archiveNote) {
-        this.archiveNote = archiveNote;
-    }
-
     public String getDeacessionLink() {
         return deacessionLink;
     }
@@ -305,12 +298,12 @@ public class DatasetVersionDTO {
     public void setArchiveTime(String archiveTime) {
         this.archiveTime = archiveTime;
     }
-    
-    public String getLicense() {
+
+    public LicenseDTO getLicense() {
         return license;
     }
 
-    public void setLicense(String license) {
+    public void setLicense(LicenseDTO license) {
         this.license = license;
     }
 
@@ -328,17 +321,17 @@ public class DatasetVersionDTO {
         return null;
     }
 
+    public String getVersionNote() {
+        return versionNote;
+    }
+
+    public void setVersionNote(String versionNote) {
+        this.versionNote = versionNote;
+    }
+
     @Override
     public String toString() {
-        return "DatasetVersionDTO{" + "archiveNote=" + archiveNote + ", deacessionLink=" + deacessionLink + ", versionNumber=" + versionNumber + ", minorVersionNumber=" + versionMinorNumber + ", id=" + id + ", versionState=" + versionState + ", releaseDate=" + releaseDate + ", lastUpdateTime=" + lastUpdateTime + ", createTime=" + createTime + ", archiveTime=" + archiveTime + ", UNF=" + UNF + ", metadataBlocks=" + metadataBlocks + ", fileMetadatas=" + fileMetadatas + '}';
+        return "DatasetVersionDTO{deacessionLink=" + deacessionLink + ", versionNumber=" + versionNumber + ", minorVersionNumber=" + versionMinorNumber + ", id=" + id + ", versionState=" + versionState + ", releaseDate=" + releaseDate + ", lastUpdateTime=" + lastUpdateTime + ", createTime=" + createTime + ", archiveTime=" + archiveTime + ", UNF=" + UNF + ", metadataBlocks=" + metadataBlocks + ", fileMetadatas=" + fileMetadatas + '}';
     }
-    
-    
-    
-     
-     
-    
-     
-    
- 
+
 }

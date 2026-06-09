@@ -21,8 +21,9 @@ import java.util.Arrays;
 import java.util.List;
 //import org.apache.commons.httpclient.Header;
 //import org.apache.commons.httpclient.methods.GetMethod;
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  *
@@ -62,23 +63,28 @@ public class StorageIOTest {
     @Test
     public void testGetDvObject() {
         assertEquals(null, instance.getDvObject());
-        instance.setDvObject(new Dataset());
-        assertEquals(new Dataset(), instance.getDataset());
+        Dataset d= new Dataset();
+        instance.setDvObject(d);
+        //assertSame uses == rather than the .equals() method which would (currently) be true for any two Datasets 
+        assertSame(d, instance.getDataset());
 
         try {
             instance.getDataFile();
             fail("This should have thrown");
         } catch (ClassCastException ex) {
-            assertEquals(ex.getMessage(), "edu.harvard.iq.dataverse.Dataset cannot be cast to edu.harvard.iq.dataverse.DataFile");
+            //Test succeeds
         }
         try {
             instance.getDataverse();
             fail("This should have thrown");
         } catch (ClassCastException ex) {
-            assertEquals(ex.getMessage(), "edu.harvard.iq.dataverse.Dataset cannot be cast to edu.harvard.iq.dataverse.Dataverse");
+            //Test succeeds
         }
-        assertEquals(new DataFile(), new FileAccessIO<>(new DataFile()).getDataFile());
-        assertEquals(new Dataverse(), new FileAccessIO<>(new Dataverse()).getDataverse());
+        // null driver defaults to 'file'
+        DataFile f= new DataFile();
+        Dataverse dv = new Dataverse();
+        assertSame(f, new FileAccessIO<>(f, null, null).getDataFile());
+        assertSame(dv, new FileAccessIO<>(dv, null, null).getDataverse());
     }
 
     @Test
@@ -183,48 +189,48 @@ public class StorageIOTest {
 
     @Test
     public void testFileLocation() {
-        assertEquals(true, instance.isLocalFile());
+        assertTrue(instance.isLocalFile());
         instance.setIsLocalFile(false);
-        assertEquals(false, instance.isLocalFile());
+        assertFalse(instance.isLocalFile());
 
-        assertEquals(false, instance.isRemoteAccess());
+        assertFalse(instance.isRemoteAccess());
         instance.setIsRemoteAccess(true);
-        assertEquals(true, instance.isRemoteAccess());
+        assertTrue(instance.isRemoteAccess());
     }
 
     @Test
     public void testHttpAccess() {
-        assertEquals(false, instance.isHttpAccess());
+        assertFalse(instance.isHttpAccess());
         instance.setIsHttpAccess(true);
-        assertEquals(true, instance.isHttpAccess());
+        assertTrue(instance.isHttpAccess());
     }*/
 
     @Test
     public void testDownloadSupported() {
-        assertEquals(true, instance.isDownloadSupported());
+        assertTrue(instance.isDownloadSupported());
         instance.setIsDownloadSupported(false);
-        assertEquals(false, instance.isDownloadSupported());
+        assertFalse(instance.isDownloadSupported());
     }
 
     @Test
     public void testSubsetSupported() {
-        assertEquals(false, instance.isSubsetSupported());
+        assertFalse(instance.isSubsetSupported());
         instance.setIsSubsetSupported(true);
-        assertEquals(true, instance.isSubsetSupported());
+        assertTrue(instance.isSubsetSupported());
     }
 
     @Test
     public void testZippedStream() {
-        assertEquals(false, instance.isZippedStream());
+        assertFalse(instance.isZippedStream());
         instance.setIsZippedStream(true);
-        assertEquals(true, instance.isZippedStream());
+        assertTrue(instance.isZippedStream());
     }
 
     @Test
     public void testNoVarHeader() {
-        assertEquals(false, instance.noVarHeader());
+        assertFalse(instance.noVarHeader());
         instance.setNoVarHeader(true);
-        assertEquals(true, instance.noVarHeader());
+        assertTrue(instance.noVarHeader());
     }
 
     @Test
@@ -236,5 +242,17 @@ public class StorageIOTest {
         List<DataVariable> dvs = Arrays.asList(new DataVariable[]{var, var});
         assertEquals("Random	Random\n", instance.generateVariableHeader(dvs));
         assertEquals(null, instance.generateVariableHeader(null));
+    }
+    
+    @Test
+    public void testGetConfigParam() {
+        System.setProperty("dataverse.files.globus.type", "globus");
+    assertEquals("globus", StorageIO.getConfigParamForDriver("globus", StorageIO.TYPE));
+    System.clearProperty("dataverse.files.globus.type");
+    }
+    
+    @Test
+    public void testGetConfigParamWithDefault() {
+    assertEquals(DataAccess.DEFAULT_STORAGE_DRIVER_IDENTIFIER, StorageIO.getConfigParamForDriver("globus", AbstractRemoteOverlayAccessIO.BASE_STORE, DataAccess.DEFAULT_STORAGE_DRIVER_IDENTIFIER));
     }
 }

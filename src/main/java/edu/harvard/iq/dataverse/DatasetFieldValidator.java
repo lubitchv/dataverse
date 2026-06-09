@@ -5,11 +5,15 @@
  */
 package edu.harvard.iq.dataverse;
 
-import javax.validation.ConstraintValidator;
-import javax.validation.ConstraintValidatorContext;
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorContext;
 
 import edu.harvard.iq.dataverse.util.BundleUtil;
-import org.apache.commons.lang.StringUtils;
+
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.apache.commons.lang3.StringUtils;
 
 
 /**
@@ -26,21 +30,75 @@ public class DatasetFieldValidator implements ConstraintValidator<ValidateDatase
     public boolean isValid(DatasetField value, ConstraintValidatorContext context) {
         context.disableDefaultConstraintViolation(); // we do this so we can have different messages depending on the different issue
 
+        // If invalid characters are found, mutate the value by removing them.
+        if (value != null && value.getValue() != null) {
+            String invalidCharacters = "[\f\u0002\ufffe]";
+            Pattern p = Pattern.compile(invalidCharacters);
+            Matcher m = p.matcher(value.getValue());
+            boolean invalidCharactersFound = m.find();
+            if (invalidCharactersFound) {
+                List<DatasetFieldValue> datasetFieldValues = value.getDatasetFieldValues();
+                List<ControlledVocabularyValue> controlledVocabularyValues = value.getControlledVocabularyValues();
+                if (!datasetFieldValues.isEmpty()) {
+                    datasetFieldValues.get(0).setValue(value.getValue().replaceAll(invalidCharacters, ""));
+                } else if (controlledVocabularyValues != null && !controlledVocabularyValues.isEmpty()) {
+                    // This controlledVocabularyValues logic comes from value.getValue().
+                    // Controlled vocabularies shouldn't have invalid characters in them
+                    // but they do, we can add a "replace" here. Some untested, commented code below.
+                    // if (controlledVocabularyValues.get(0) != null) {
+                    //    controlledVocabularyValues.get(0).setStrValue(value.getValue().replaceAll(invalidCharacters, ""));
+                    // }
+                }
+            }
+        }
+
         DatasetFieldType dsfType = value.getDatasetFieldType();
         //SEK Additional logic turns off validation for templates
         if (isTemplateDatasetField(value)){
             return true;
         }
-        if (((dsfType.isPrimitive() && dsfType.isRequired())  || (dsfType.isPrimitive() && value.isRequired())) 
-                && StringUtils.isBlank(value.getValue())) {
-            try{
-                context.buildConstraintViolationWithTemplate(dsfType.getDisplayName() + " " + BundleUtil.getStringFromBundle("isrequired")).addConstraintViolation();
-            } catch (NullPointerException npe){
-                //if there's no context for the error we can't put it anywhere....
+
+        // if value is not primitive or not empty
+        // For controlled vocabulary fields, check that actual CV values are selected,
+        // not just that datasetFieldValues contains something (which might be an invalid N/A placeholder)
+        // See https://github.com/IQSS/dataverse/issues/11900
+        if (!dsfType.isPrimitive()) {
+            return true;
+        }
+
+        if (dsfType.isControlledVocabulary()) {
+            // For CV fields, check if there are actual controlled vocabulary values selected
+            if (value.getControlledVocabularyValues() != null && !value.getControlledVocabularyValues().isEmpty()) {
+                return true;
+            }
+            // If no CV values, fall through to required field check below
+        } else {
+            // For non-CV primitive fields, check if value is not blank
+            if (!StringUtils.isBlank(value.getValue())) {
+                return true;
+            }
+        }
+
+        if (value.isRequired()) { 
+            String errorMessage = null;
+            DatasetFieldCompoundValue parent = value.getParentDatasetFieldCompoundValue();
+            if (parent == null || parent.getParentDatasetField().isRequired()) {
+                errorMessage = BundleUtil.getStringFromBundle("isrequired", List.of(dsfType.getDisplayName()));
+            } else if (areSiblingsPopulated(value)) {
+                errorMessage = BundleUtil.getStringFromBundle("isrequired.conditional", List.of(dsfType.getDisplayName(),parent.getParentDatasetField().getDatasetFieldType().getDisplayName()));
             }
 
-            return false;
+            if (errorMessage != null) {
+                try {
+                    context.buildConstraintViolationWithTemplate(errorMessage).addConstraintViolation();
+                } catch (NullPointerException npe){
+                    //if there's no context for the error we can't put it anywhere....
+                }
+                
+                return false;
+            }
         }
+               
         return true;
     }
     
@@ -51,4 +109,17 @@ public class DatasetFieldValidator implements ConstraintValidator<ValidateDatase
             return dsf.getTemplate() != null;
         }
     }
+    
+    private boolean areSiblingsPopulated(DatasetField dsf) {
+        if (dsf.getParentDatasetFieldCompoundValue() != null) {
+            DatasetFieldCompoundValue compound = dsf.getParentDatasetFieldCompoundValue();
+            for (DatasetField sibling : compound.getChildDatasetFields()) {
+                if (!StringUtils.isBlank(sibling.getValue())) {
+                    return true;
+                }
+            }      
+        }
+
+        return false;
+    } 
 }

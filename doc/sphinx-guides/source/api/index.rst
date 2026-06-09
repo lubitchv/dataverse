@@ -9,6 +9,7 @@ API Guide
 **Contents:**
 
 .. toctree::
+   :maxdepth: 2
 
    intro
    getting-started
@@ -20,5 +21,8 @@ API Guide
    sword
    client-libraries
    external-tools
+   curation-labels
+   linkeddatanotification
    apps
    faq
+   changelog

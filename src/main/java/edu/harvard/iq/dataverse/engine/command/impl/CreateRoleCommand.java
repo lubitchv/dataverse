@@ -11,6 +11,8 @@ import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
 import edu.harvard.iq.dataverse.engine.command.RequiredPermissions;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
 import edu.harvard.iq.dataverse.engine.command.exception.IllegalCommandException;
+import edu.harvard.iq.dataverse.util.BundleUtil;
+import jakarta.persistence.NoResultException;
 
 /**
  * Create a new role in a dataverse.
@@ -20,12 +22,12 @@ import edu.harvard.iq.dataverse.engine.command.exception.IllegalCommandException
 @RequiredPermissions(Permission.ManageDataversePermissions)
 public class CreateRoleCommand extends AbstractCommand<DataverseRole> {
 
-    private final DataverseRole created;
+    private final DataverseRole role;
     private final Dataverse dv;
 
     public CreateRoleCommand(DataverseRole aRole, DataverseRequest aRequest, Dataverse anAffectedDataverse) {
         super(aRequest, anAffectedDataverse);
-        created = aRole;
+        role = aRole;
         dv = anAffectedDataverse;
     }
 
@@ -34,11 +36,21 @@ public class CreateRoleCommand extends AbstractCommand<DataverseRole> {
         User user = getUser();
         //todo: temporary for 4.0 - only superusers can create and edit roles
         if ((!(user instanceof AuthenticatedUser) || !user.isSuperuser())) {
-            throw new IllegalCommandException("Roles can only be created or edited by superusers.",this);
+            throw new IllegalCommandException(BundleUtil.getStringFromBundle("permission.role.must.be.created.by.superuser"),this);
         }
-
-        dv.addRole(created);
-        return ctxt.roles().save(created);
+        //Test to see if the role already exists in DB
+        try {
+            DataverseRole testRole = ctxt.em().createNamedQuery("DataverseRole.findDataverseRoleByAlias", DataverseRole.class)
+                    .setParameter("alias", role.getAlias())
+                    .getSingleResult();
+            if (testRole != null && !testRole.getId().equals(role.getId())) {
+                throw new IllegalCommandException(BundleUtil.getStringFromBundle("permission.role.not.created.alias.already.exists"), this);
+            }
+        } catch (NoResultException nre) {
+            //  we want no results because that meant we can create a role
+        }
+        dv.addRole(role);
+        return ctxt.roles().save(role);
     }
     
 }

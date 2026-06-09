@@ -3,6 +3,8 @@ package edu.harvard.iq.dataverse.api;
 import edu.harvard.iq.dataverse.authorization.groups.impl.ipaddress.ip.IpAddress;
 import edu.harvard.iq.dataverse.util.json.JsonParseException;
 import edu.harvard.iq.dataverse.util.json.JsonParser;
+
+import static edu.harvard.iq.dataverse.settings.SettingsServiceBean.Key.WorkflowsAdminIpWhitelist;
 import static edu.harvard.iq.dataverse.util.json.JsonPrinter.brief;
 import static edu.harvard.iq.dataverse.util.json.JsonPrinter.json;
 import static edu.harvard.iq.dataverse.util.json.JsonPrinter.toJsonArray;
@@ -11,18 +13,18 @@ import edu.harvard.iq.dataverse.workflow.WorkflowContext.TriggerType;
 import edu.harvard.iq.dataverse.workflow.WorkflowServiceBean;
 import java.util.Arrays;
 import java.util.Optional;
-import javax.ejb.EJB;
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonValue;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.core.Response;
+import jakarta.ejb.EJB;
+import jakarta.json.Json;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.json.JsonValue;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.core.Response;
 
 /**
  * API Endpoint for managing workflows.
@@ -30,8 +32,9 @@ import javax.ws.rs.core.Response;
  */
 @Path("admin/workflows")
 public class WorkflowsAdmin extends AbstractApiBean {
-      
-    public static final String IP_WHITELIST_KEY="WorkflowsAdmin#IP_WHITELIST_KEY";
+    
+    public static final String IP_SEPARATOR = ";";
+    public static final String DEFAULT_IP_ALLOWLIST = "127.0.0.1" + IP_SEPARATOR + "::1";
     
     @EJB
     WorkflowServiceBean workflows;
@@ -111,9 +114,9 @@ public class WorkflowsAdmin extends AbstractApiBean {
         }
     }
     
-    @Path("/{identifier}")
+    @Path("/{id}")
     @GET
-    public Response getWorkflow(@PathParam("identifier") String identifier ) {
+    public Response getWorkflow(@PathParam("id") String identifier ) {
         try {
             long idtf = Long.parseLong(identifier);
             return workflows.getWorkflow(idtf)
@@ -153,14 +156,14 @@ public class WorkflowsAdmin extends AbstractApiBean {
     @Path("/ip-whitelist")
     @GET
     public Response getIpWhitelist() {
-        return ok( settingsSvc.get(IP_WHITELIST_KEY, "127.0.0.1;::1") );
+        return ok( settingsSvc.getValueForKey(WorkflowsAdminIpWhitelist, DEFAULT_IP_ALLOWLIST) );
     }
     
     @Path("/ip-whitelist")
     @PUT
     public Response setIpWhitelist(String body) {
         String ipList = body.trim();
-        String[] ips = ipList.split(";");
+        String[] ips = ipList.split(IP_SEPARATOR);
         boolean allIpsOk = Arrays.stream(ips).allMatch(ip->{
             try {
                 IpAddress.valueOf(ip);
@@ -170,18 +173,17 @@ public class WorkflowsAdmin extends AbstractApiBean {
             }
         } );
         if (allIpsOk) {
-            settingsSvc.set(IP_WHITELIST_KEY, ipList);
-            return ok( settingsSvc.get(IP_WHITELIST_KEY, "127.0.0.1;::1") );
+            settingsSvc.setValueForKey(WorkflowsAdminIpWhitelist, ipList);
+            return ok( settingsSvc.getValueForKey(WorkflowsAdminIpWhitelist, DEFAULT_IP_ALLOWLIST) );
         } else {
             return badRequest("Request contains illegal IP addresses.");
         }
-                
     }
     
     @Path("/ip-whitelist")
     @DELETE
     public Response deleteIpWhitelist() {
-        settingsSvc.delete(IP_WHITELIST_KEY);
+        settingsSvc.deleteValueForKey(WorkflowsAdminIpWhitelist);
         return ok( "Restored whitelist to default (127.0.0.1;::1)" );
     }
     

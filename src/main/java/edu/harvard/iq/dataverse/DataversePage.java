@@ -4,22 +4,25 @@ import edu.harvard.iq.dataverse.UserNotification.Type;
 import edu.harvard.iq.dataverse.authorization.Permission;
 import edu.harvard.iq.dataverse.authorization.users.AuthenticatedUser;
 import edu.harvard.iq.dataverse.authorization.users.User;
+import edu.harvard.iq.dataverse.dataaccess.DataAccess;
+import edu.harvard.iq.dataverse.dataset.DatasetUtil;
 import edu.harvard.iq.dataverse.dataverse.DataverseUtil;
 import edu.harvard.iq.dataverse.engine.command.Command;
-import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
+import edu.harvard.iq.dataverse.engine.command.impl.CheckRateLimitForCollectionPageCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.CreateDataverseCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.CreateSavedSearchCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.DeleteDataverseCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.LinkDataverseCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.PublishDataverseCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.UpdateDataverseCommand;
+import edu.harvard.iq.dataverse.pidproviders.PidProvider;
+import edu.harvard.iq.dataverse.pidproviders.PidProviderFactoryBean;
+import edu.harvard.iq.dataverse.pidproviders.PidUtil;
 import edu.harvard.iq.dataverse.search.FacetCategory;
 import edu.harvard.iq.dataverse.search.IndexServiceBean;
-import edu.harvard.iq.dataverse.search.SearchException;
 import edu.harvard.iq.dataverse.search.SearchFields;
 import edu.harvard.iq.dataverse.search.SearchIncludeFragment;
-import edu.harvard.iq.dataverse.search.SearchServiceBean;
 import edu.harvard.iq.dataverse.search.savedsearch.SavedSearch;
 import edu.harvard.iq.dataverse.search.savedsearch.SavedSearchFilterQuery;
 import edu.harvard.iq.dataverse.search.savedsearch.SavedSearchServiceBean;
@@ -28,27 +31,33 @@ import edu.harvard.iq.dataverse.util.JsfHelper;
 import static edu.harvard.iq.dataverse.util.JsfHelper.JH;
 import edu.harvard.iq.dataverse.util.SystemConfig;
 import java.util.List;
-import javax.ejb.EJB;
-import javax.faces.application.FacesMessage;
-import javax.faces.context.FacesContext;
-import javax.faces.event.ActionEvent;
-import javax.faces.view.ViewScoped;
-import javax.inject.Inject;
-import javax.inject.Named;
+
+import edu.harvard.iq.dataverse.util.cache.CacheFactoryBean;
+import jakarta.ejb.EJB;
+import jakarta.faces.application.FacesMessage;
+import jakarta.faces.context.FacesContext;
+import jakarta.faces.view.ViewScoped;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.faces.component.UIComponent;
-import javax.faces.component.UIInput;
+import jakarta.faces.component.UIComponent;
+import jakarta.faces.component.UIInput;
 import org.primefaces.model.DualListModel;
-import javax.ejb.EJBException;
-import javax.faces.event.ValueChangeEvent;
-import javax.faces.model.SelectItem;
-import org.apache.commons.lang.StringEscapeUtils;
-import org.apache.commons.lang.StringUtils;
+import jakarta.ejb.EJBException;
+import jakarta.faces.event.ValueChangeEvent;
+import jakarta.faces.model.SelectItem;
+import org.apache.commons.text.StringEscapeUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.primefaces.PrimeFaces;
 import org.primefaces.event.TransferEvent;
 
@@ -79,8 +88,6 @@ public class DataversePage implements java.io.Serializable {
     @EJB
     EjbDataverseEngine commandEngine;
     @EJB
-    SearchServiceBean searchService;
-    @EJB
     DatasetFieldServiceBean datasetFieldService;
     @EJB
     DataverseFacetServiceBean dataverseFacetService;
@@ -108,12 +115,25 @@ public class DataversePage implements java.io.Serializable {
     @EJB
     DataverseLinkingServiceBean linkingService;
     @Inject PermissionsWrapper permissionsWrapper;
+    @Inject 
+    NavigationWrapper navigationWrapper;
+    @Inject DataverseHeaderFragment dataverseHeaderFragment;
+    @EJB
+    PidProviderFactoryBean pidProviderFactoryBean;
+    @EJB
+    CacheFactoryBean cacheFactory;
 
-    private Dataverse dataverse = new Dataverse();
+    private Dataverse dataverse = new Dataverse();  
+
+    /**
+     * View parameters
+     */
+    private Long id = null;
+    private String alias = null;
+    private Long ownerId = null;    
     private EditMode editMode;
     private LinkMode linkMode;
 
-    private Long ownerId;
     private DualListModel<DatasetFieldType> facets = new DualListModel<>(new ArrayList<>(), new ArrayList<>());
     private DualListModel<Dataverse> featuredDataverses = new DualListModel<>(new ArrayList<>(), new ArrayList<>());
     private List<Dataverse> dataversesForLinking;
@@ -186,6 +206,21 @@ public class DataversePage implements java.io.Serializable {
         this.linkMode = linkMode;
     }
     
+    public boolean showLinkingPopup() {
+        String testquery = "";
+        if (session.getUser() == null) {
+            return false;
+        }
+        if (dataverse == null) {
+            return false;
+        }
+        if (query != null) {
+            testquery = query;
+        }
+
+        return (session.getUser().isSuperuser() && (dataverse.getOwner() != null || !testquery.isEmpty()));
+    }
+    
     public void setupLinkingPopup (String popupSetting){
         if (popupSetting.equals("link")){
             setLinkMode(LinkMode.LINKDATAVERSE);           
@@ -250,6 +285,12 @@ public class DataversePage implements java.io.Serializable {
     public void setDataverse(Dataverse dataverse) {
         this.dataverse = dataverse;
     }
+    
+    public Long getId() { return this.id; }
+    public void setId(Long id) { this.id = id; }
+
+    public String getAlias() { return this.alias; }
+    public void setAlias(String alias) { this.alias = alias; }    
 
     public EditMode getEditMode() {
         return editMode;
@@ -267,17 +308,32 @@ public class DataversePage implements java.io.Serializable {
         this.ownerId = ownerId;
     }
 
+    public void updateOwnerDataverse() {
+        if (dataverse.getOwner() != null && dataverse.getOwner().getId() != null) {
+            ownerId = dataverse.getOwner().getId();
+            logger.info("New host dataverse id: " + ownerId);
+            // discard the dataverse already created:
+            dataverse = new Dataverse();
+            // initialize a new new dataverse:
+            init();
+            dataverseHeaderFragment.initBreadcrumbs(dataverse);
+        }
+    }
+    
     public String init() {
         //System.out.println("_YE_OLDE_QUERY_COUNTER_");  // for debug purposes
-
-        if (dataverse.getAlias() != null || dataverse.getId() != null || ownerId == null) {// view mode for a dataverse
-            if (dataverse.getAlias() != null) {
-                dataverse = dataverseService.findByAlias(dataverse.getAlias());
-            } else if (dataverse.getId() != null) {
-                dataverse = dataverseService.find(dataverse.getId());
+        // Check for rate limit exceeded. Must be done before anything else to prevent unnecessary processing.
+        if (!cacheFactory.checkRate(session.getUser(), new CheckRateLimitForCollectionPageCommand(null,null))) {
+            return navigationWrapper.tooManyRequests();
+        }
+        if (this.getAlias() != null || this.getId() != null || this.getOwnerId() == null) {// view mode for a dataverse
+            if (this.getAlias() != null) {
+                dataverse = dataverseService.findByAlias(this.getAlias());
+            } else if (this.getId() != null) {
+                dataverse = dataverseService.find(this.getId());
             } else {
                 try {
-                    dataverse = dataverseService.findRootDataverse();
+                    dataverse = settingsWrapper.getRootDataverse();
                 } catch (EJBException e) {
                     // @todo handle case with no root dataverse (a fresh installation) with message about using API to create the root 
                     dataverse = null;
@@ -289,16 +345,18 @@ public class DataversePage implements java.io.Serializable {
                 return permissionsWrapper.notFound();
             }
             if (!dataverse.isReleased() && !permissionService.on(dataverse).has(Permission.ViewUnpublishedDataverse)) {
+                // the permission lookup above should probably be moved into the permissionsWrapper -- L.A. 5.7
                 return permissionsWrapper.notAuthorized();
             }
 
             ownerId = dataverse.getOwner() != null ? dataverse.getOwner().getId() : null;
         } else { // ownerId != null; create mode for a new child dataverse
             editMode = EditMode.CREATE;
-            dataverse.setOwner(dataverseService.find(ownerId));
+            dataverse.setOwner(dataverseService.find( this.getOwnerId()));
             if (dataverse.getOwner() == null) {
                 return  permissionsWrapper.notFound();
             } else if (!permissionService.on(dataverse.getOwner()).has(Permission.AddDataverse)) {
+                // the permission lookup above should probably be moved into the permissionsWrapper -- L.A. 5.7
                 return permissionsWrapper.notAuthorized();            
             }
 
@@ -319,7 +377,7 @@ public class DataversePage implements java.io.Serializable {
         List<Dataverse> featuredSource = new ArrayList<>();
         List<Dataverse> featuredTarget = new ArrayList<>();
         featuredSource.addAll(dataverseService.findAllPublishedByOwnerId(dataverse.getId()));
-        featuredSource.addAll(linkingService.findLinkingDataverses(dataverse.getId()));
+        featuredSource.addAll(linkingService.findLinkedDataverses(dataverse.getId()));
         List<DataverseFeaturedDataverse> featuredList = featuredDataverseService.findByDataverseId(dataverse.getId());
         for (DataverseFeaturedDataverse dfd : featuredList) {
             Dataverse fd = dfd.getFeaturedDataverse();
@@ -466,18 +524,6 @@ public class DataversePage implements java.io.Serializable {
         }
         setEditInputLevel(false);
     }
-    
-    public void toggleInputLevel( Long mdbId, long dsftId){
-        for (MetadataBlock mdb : allMetadataBlocks) {
-            if (mdb.getId().equals(mdbId)) {
-                for (DatasetFieldType dsftTest : mdb.getDatasetFieldTypes()) {
-                    if (dsftTest.getId().equals(dsftId)) {
-                            dsftTest.setRequiredDV(!dsftTest.isRequiredDV());                           
-                    }
-                }
-            }
-        }        
-    }
 
     public void updateInclude(Long mdbId, long dsftId) {
         List<DatasetFieldType> childDSFT = new ArrayList<>();
@@ -516,14 +562,19 @@ public class DataversePage implements java.io.Serializable {
     public List<SelectItem> resetSelectItems(DatasetFieldType typeIn) {
         List<SelectItem> retList = new ArrayList<>();
         if ((typeIn.isHasParent() && typeIn.getParentDatasetFieldType().isInclude()) || (!typeIn.isHasParent() && typeIn.isInclude())) {
-            SelectItem requiredItem = new SelectItem();
-            requiredItem.setLabel(BundleUtil.getStringFromBundle("dataverse.item.required"));
-            requiredItem.setValue(true);
-            retList.add(requiredItem);
-            SelectItem optional = new SelectItem();
-            optional.setLabel(BundleUtil.getStringFromBundle("dataverse.item.optional"));
-            optional.setValue(false);
-            retList.add(optional);
+                SelectItem requiredItem = new SelectItem();
+                requiredItem.setLabel(BundleUtil.getStringFromBundle("dataverse.item.required"));
+                requiredItem.setValue(true);
+                retList.add(requiredItem);
+                SelectItem optional = new SelectItem();
+                // When parent field is not required and child is; default level is "Conditionally Required"
+                if (typeIn.isRequired() && typeIn.isHasParent() && !typeIn.getParentDatasetFieldType().isRequired()) {
+                    optional.setLabel(BundleUtil.getStringFromBundle("dataverse.item.required.conditional"));
+                } else {
+                    optional.setLabel(BundleUtil.getStringFromBundle("dataverse.item.optional"));                    
+                }
+                optional.setValue(false);
+                retList.add(optional);
         } else {
             SelectItem hidden = new SelectItem();
             hidden.setLabel(BundleUtil.getStringFromBundle("dataverse.item.hidden"));
@@ -573,24 +624,16 @@ public class DataversePage implements java.io.Serializable {
                 if (dataverse.isMetadataBlockRoot() && (mdb.isSelected() || mdb.isRequired())) {
                     selectedBlocks.add(mdb);
                     for (DatasetFieldType dsft : mdb.getDatasetFieldTypes()) {
-                        if (dsft.isRequiredDV() && !dsft.isRequired()
-                                && ((!dsft.isHasParent() && dsft.isInclude())
-                                || (dsft.isHasParent() && dsft.getParentDatasetFieldType().isInclude()))) {
-                            DataverseFieldTypeInputLevel dftil = new DataverseFieldTypeInputLevel();
-                            dftil.setDatasetFieldType(dsft);
-                            dftil.setDataverse(dataverse);
-                            dftil.setRequired(true);
-                            dftil.setInclude(true);
-                            listDFTIL.add(dftil);
-                        }
-                        if ((!dsft.isHasParent() && !dsft.isInclude())
-                                || (dsft.isHasParent() && !dsft.getParentDatasetFieldType().isInclude())) {
-                            DataverseFieldTypeInputLevel dftil = new DataverseFieldTypeInputLevel();
-                            dftil.setDatasetFieldType(dsft);
-                            dftil.setDataverse(dataverse);
-                            dftil.setRequired(false);
-                            dftil.setInclude(false);
-                            listDFTIL.add(dftil);
+                        if (!dsft.isChild()) {
+                            // Save input level for parent field
+                            saveInputLevels(listDFTIL, dsft, dataverse);
+                            
+                            // Handle child fields
+                            if (dsft.isHasChildren()) {
+                                for (DatasetFieldType child : dsft.getChildDatasetFieldTypes()) {
+                                    saveInputLevels(listDFTIL, child, dataverse);
+                                }
+                            }
                         }
                     }
                 }
@@ -611,7 +654,9 @@ public class DataversePage implements java.io.Serializable {
         Boolean create;
         if (dataverse.getId() == null) {
             if (session.getUser().isAuthenticated()) {
-                dataverse.setOwner(ownerId != null ? dataverseService.find(ownerId) : null);
+                if (dataverse.getOwner() == null || dataverse.getOwner().getId() == null) {
+                    dataverse.setOwner(ownerId != null ? dataverseService.find(ownerId) : null);
+                }
                 create = Boolean.TRUE;
                 cmd = new CreateDataverseCommand(dataverse, dvRequestService.getDataverseRequest(), facets.getTarget(), listDFTIL);
             } else {
@@ -639,7 +684,7 @@ public class DataversePage implements java.io.Serializable {
             if (editMode != null && editMode.equals(EditMode.FEATURED)) {
                 message = BundleUtil.getStringFromBundle("dataverse.feature.update");
             } else {
-                message = (create) ? BundleUtil.getStringFromBundle("dataverse.create.success", Arrays.asList(settingsWrapper.getGuidesBaseUrl(), systemConfig.getGuidesVersion())) : BundleUtil.getStringFromBundle("dataverse.update.success");
+                message = (create) ? BundleUtil.getStringFromBundle("dataverse.create.success", Arrays.asList(settingsWrapper.getGuidesBaseUrl(), settingsWrapper.getGuidesVersion())) : BundleUtil.getStringFromBundle("dataverse.update.success");
             }
             JsfHelper.addSuccessMessage(message);
             
@@ -647,19 +692,24 @@ public class DataversePage implements java.io.Serializable {
             return returnRedirect();            
             
 
-        } catch (CommandException ex) {
+        } /*catch (CommandException ex) {
             logger.log(Level.SEVERE, "Unexpected Exception calling dataverse command", ex);
             String errMsg = create ? BundleUtil.getStringFromBundle("dataverse.create.failure") : BundleUtil.getStringFromBundle("dataverse.update.failure");
             JH.addMessage(FacesMessage.SEVERITY_FATAL, errMsg);
             return null;
-        } catch (Exception e) {
+        }*/ catch (Exception e) {
             logger.log(Level.SEVERE, "Unexpected Exception calling dataverse command", e);
             String errMsg = create ? BundleUtil.getStringFromBundle("dataverse.create.failure") : BundleUtil.getStringFromBundle("dataverse.update.failure");
-            JH.addMessage(FacesMessage.SEVERITY_FATAL, errMsg);
+            
+            String failureMessage = e.getMessage() == null 
+                        ? errMsg
+                        : e.getMessage();
+            JsfHelper.addErrorMessage(failureMessage);
+            
             return null;
         }
     }
-
+    
     public String cancel() {
         // reset values
         dataverse = dataverseService.find(dataverse.getId());
@@ -668,7 +718,7 @@ public class DataversePage implements java.io.Serializable {
         return "/dataverse.xhtml?alias=" + dataverse.getAlias() + "&faces-redirect=true";
     }
 
-    public boolean isRootDataverse() {
+    public boolean isRootDataverse() {        
         return dataverse.getOwner() == null;
     }
 
@@ -701,13 +751,8 @@ public class DataversePage implements java.io.Serializable {
     public String resetToInherit() {
 
         setInheritMetadataBlockFromParent(true);
-        if (editMode.equals(DataversePage.EditMode.CREATE)) {;
-            refreshAllMetadataBlocks();
-            return null;
-        } else {
-            String retVal = save();
-            return retVal;
-        }
+        refreshAllMetadataBlocks();
+        return null;
     }
 
     public void cancelMetadataBlocks() {
@@ -745,18 +790,9 @@ public class DataversePage implements java.io.Serializable {
             return "";
         }
 
-        AuthenticatedUser savedSearchCreator = getAuthenticatedUser();
-        if (savedSearchCreator == null) {
-            String msg = BundleUtil.getStringFromBundle("dataverse.link.user");
-            logger.severe(msg);
-            JsfHelper.addErrorMessage(msg);
-            return returnRedirect();
-        }
-
         linkingDataverse = dataverseService.find(linkingDataverseId);
 
         LinkDataverseCommand cmd = new LinkDataverseCommand(dvRequestService.getDataverseRequest(), linkingDataverse, dataverse);
-        //LinkDvObjectCommand cmd = new LinkDvObjectCommand (session.getUser(), linkingDataverse, dataverse);
         try {
             commandEngine.submit(cmd);
         } catch (CommandException ex) {
@@ -766,38 +802,15 @@ public class DataversePage implements java.io.Serializable {
             JsfHelper.addErrorMessage(msg);
             return returnRedirect();
         }
-
-        SavedSearch savedSearchOfChildren = createSavedSearchForChildren(savedSearchCreator);
-
-        boolean createLinksAndIndexRightNow = false;
-        if (createLinksAndIndexRightNow) {
-            try {
-                // create links (does indexing) right now (might be expensive)
-                boolean debug = false;
-                DataverseRequest dataverseRequest = new DataverseRequest(savedSearchCreator, SavedSearchServiceBean.getHttpServletRequest());
-                savedSearchService.makeLinksForSingleSavedSearch(dataverseRequest, savedSearchOfChildren, debug);              
-                JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("dataverse.linked.success", getSuccessMessageArguments()));                   
-                return returnRedirect();
-            } catch (SearchException | CommandException ex) {
-                // error: solr is down, etc. can't link children right now
-                JsfHelper.addErrorMessage(BundleUtil.getStringFromBundle("dataverse.linked.internalerror", getSuccessMessageArguments()));
-                String msg = dataverse.getDisplayName() + " has been successfully linked to " + linkingDataverse.getDisplayName() + " but contents will not appear until an internal error has been fixed.";
-                logger.log(Level.SEVERE, "{0} {1}", new Object[]{msg, ex});
-                //JsfHelper.addErrorMessage(msg);
-                return returnRedirect();
-            }
-        } else {
-            // defer: please wait for the next timer/cron job
-            //JsfHelper.addSuccessMessage(dataverse.getDisplayName() + " has been successfully linked to " + linkingDataverse.getDisplayName() + ". Please wait for its contents to appear.");
-            JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("dataverse.linked.success.wait", getSuccessMessageArguments()));
-            return returnRedirect();
-        }
+        
+        JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("dataverse.linked.success.wait", getSuccessMessageArguments()));
+        return returnRedirect();        
     }
     
     private List<String> getSuccessMessageArguments() {
         List<String> arguments = new ArrayList<>();
-        arguments.add(StringEscapeUtils.escapeHtml(dataverse.getDisplayName()));
-        String linkString = "<a href=\"/dataverse/" + linkingDataverse.getAlias() + "\">" + StringEscapeUtils.escapeHtml(linkingDataverse.getDisplayName()) + "</a>";
+        arguments.add(StringEscapeUtils.escapeHtml4(dataverse.getDisplayName()));
+        String linkString = "<a href=\"/dataverse/" + linkingDataverse.getAlias() + "\">" + StringEscapeUtils.escapeHtml4(linkingDataverse.getDisplayName()) + "</a>";
         arguments.add(linkString);
         return arguments;
     }
@@ -841,9 +854,9 @@ public class DataversePage implements java.io.Serializable {
             return returnRedirect();
         }
 
-        SavedSearch savedSearch = new SavedSearch(searchIncludeFragment.getQuery(), linkingDataverse, savedSearchCreator);
+        SavedSearch savedSearch = new SavedSearch(query, linkingDataverse, savedSearchCreator);
         savedSearch.setSavedSearchFilterQueries(new ArrayList<>());
-        for (String filterQuery : searchIncludeFragment.getFilterQueriesDebug()) {
+        for (String filterQuery : filterQueries) {
             /**
              * @todo Why are there null's here anyway? Turn on debug and figure
              * this out.
@@ -858,7 +871,7 @@ public class DataversePage implements java.io.Serializable {
             commandEngine.submit(cmd);
 
             List<String> arguments = new ArrayList<>();           
-            String linkString = "<a href=\"/dataverse/" + linkingDataverse.getAlias() + "\">" + StringEscapeUtils.escapeHtml(linkingDataverse.getDisplayName()) + "</a>";
+            String linkString = "<a href=\"/dataverse/" + linkingDataverse.getAlias() + "\">" + StringEscapeUtils.escapeHtml4(linkingDataverse.getDisplayName()) + "</a>";
             arguments.add(linkString);
             String successMessageString = BundleUtil.getStringFromBundle("dataverse.saved.search.success", arguments);
             JsfHelper.addSuccessMessage(successMessageString);
@@ -889,11 +902,14 @@ public class DataversePage implements java.io.Serializable {
 
             } catch (Exception ex) {
                 logger.log(Level.SEVERE, "Unexpected Exception calling  publish dataverse command", ex);
-                JsfHelper.addErrorMessage(BundleUtil.getStringFromBundle("dataverse.publish.failure"));
+                String failureMessage = ex.getMessage() == null 
+                        ? BundleUtil.getStringFromBundle("dataverse.publish.failure")
+                        : ex.getMessage();
+                JsfHelper.addErrorMessage(failureMessage);
 
             }
         } else {
-            JsfHelper.addErrorMessage(BundleUtil.getStringFromBundle("dataverse.publish.not.authorized"));            
+            JsfHelper.addErrorMessage(BundleUtil.getStringFromBundle("dataverse.release.authenticatedUsersOnly"));
         }
         return returnRedirect();
 
@@ -904,11 +920,20 @@ public class DataversePage implements java.io.Serializable {
         try {
             commandEngine.submit(cmd);
             JsfHelper.addSuccessMessage(BundleUtil.getStringFromBundle("dataverse.delete.success"));
+            solrDelay();
         } catch (Exception ex) {
             logger.log(Level.SEVERE, "Unexpected Exception calling  delete dataverse command", ex);
             JsfHelper.addErrorMessage(BundleUtil.getStringFromBundle("dataverse.delete.failure"));
         }
         return "/dataverse.xhtml?alias=" + dataverse.getOwner().getAlias() + "&faces-redirect=true";
+    }
+    // delay 1 second so solr has time to update the indexes. Without the delay the UI will continue to show the deleted dataverse
+    private void solrDelay() {
+        try {
+            Thread.sleep(1000L);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public String getMetadataBlockPreview(MetadataBlock mdb, int numberOfItems) {
@@ -984,25 +1009,11 @@ public class DataversePage implements java.io.Serializable {
 
             for (DatasetFieldType dsft : mdb.getDatasetFieldTypes()) {
                 if (!dsft.isChild()) {
-                    DataverseFieldTypeInputLevel dsfIl = dataverseFieldTypeInputLevelService.findByDataverseIdDatasetFieldTypeId(dataverseIdForInputLevel, dsft.getId());
-                    if (dsfIl != null) {
-                        dsft.setRequiredDV(dsfIl.isRequired());
-                        dsft.setInclude(dsfIl.isInclude());
-                    } else {
-                        dsft.setRequiredDV(dsft.isRequired());
-                        dsft.setInclude(true);
-                    }
+                    loadInputLevels(dsft, dataverseIdForInputLevel);
                     dsft.setOptionSelectItems(resetSelectItems(dsft));
                     if (dsft.isHasChildren()) {
                         for (DatasetFieldType child : dsft.getChildDatasetFieldTypes()) {
-                            DataverseFieldTypeInputLevel dsfIlChild = dataverseFieldTypeInputLevelService.findByDataverseIdDatasetFieldTypeId(dataverseIdForInputLevel, child.getId());
-                            if (dsfIlChild != null) {
-                                child.setRequiredDV(dsfIlChild.isRequired());
-                                child.setInclude(dsfIlChild.isInclude());
-                            } else {
-                                child.setRequiredDV(child.isRequired());
-                                child.setInclude(true);
-                            }
+                            loadInputLevels(child, dataverseIdForInputLevel);
                             child.setOptionSelectItems(resetSelectItems(child));
                         }
                     }
@@ -1011,6 +1022,21 @@ public class DataversePage implements java.io.Serializable {
             retList.add(mdb);
         }
         setAllMetadataBlocks(retList);
+    }
+
+    private void loadInputLevels(DatasetFieldType dsft, Long dataverseIdForInputLevel) {
+        DataverseFieldTypeInputLevel dsfIl = dataverseFieldTypeInputLevelService
+            .findByDataverseIdDatasetFieldTypeId(dataverseIdForInputLevel, dsft.getId());
+        
+        if (dsfIl != null) {
+            dsft.setRequiredDV(dsfIl.isRequired());
+            dsft.setInclude(dsfIl.isInclude());
+            dsft.setLocalDisplayOnCreate(dsfIl.getDisplayOnCreate());
+        } else {
+            // If there is no input level, use the default values
+            dsft.setRequiredDV(dsft.isRequired());
+            dsft.setInclude(true);
+        }
     }
 
     public void validateAlias(FacesContext context, UIComponent toValidate, Object value) {
@@ -1158,5 +1184,188 @@ public class DataversePage implements java.io.Serializable {
 
     public void setSearchFieldSubtree(String searchFieldSubtree) {
         this.searchFieldSubtree = searchFieldSubtree;
+    }
+    
+    public List<Dataverse> completeHostDataverseMenuList(String query) {
+        if (session.getUser().isAuthenticated()) {
+            return dataverseService.filterDataversesForHosting(query, dvRequestService.getDataverseRequest());
+        } else {
+            return null;
+        }
+    }
+    
+    public Set<Entry<String, String>> getStorageDriverOptions() {
+    	HashMap<String, String> drivers =new HashMap<String, String>();
+    	drivers.putAll(DataAccess.getStorageDriverLabels());
+    	//Add an entry for the default (inherited from an ancestor or the system default)
+    	drivers.put(getDefaultStorageDriverLabel(), DataAccess.UNDEFINED_STORAGE_DRIVER_IDENTIFIER);
+    	return drivers.entrySet();
+    }
+    
+    public String getDefaultStorageDriverLabel() {
+    	String storageDriverId = DataAccess.DEFAULT_STORAGE_DRIVER_IDENTIFIER;
+    	Dataverse parent = dataverse.getOwner();
+    	boolean fromAncestor=false;
+    	if(parent != null) {
+    		storageDriverId = parent.getEffectiveStorageDriverId();
+    		//recurse dataverse chain to root and if any have a storagedriver set, fromAncestor is true
+    	    while(parent!=null) {
+    	    	if(!parent.getStorageDriverId().equals(DataAccess.UNDEFINED_STORAGE_DRIVER_IDENTIFIER)) {
+    	    		fromAncestor=true;
+    	    		break;
+    	    	}
+    	    	parent=parent.getOwner();
+    	    }
+    	}
+   		String label = DataAccess.getStorageDriverLabelFor(storageDriverId);
+   		if(fromAncestor) {
+   			label = label + " " + BundleUtil.getStringFromBundle("dataverse.inherited");
+   		} else {
+   			label = label + " " + BundleUtil.getStringFromBundle("dataverse.default");
+   		}
+   		return label;
+    }
+    
+    public Set<Entry<String, String>> getMetadataLanguages() {
+        return settingsWrapper.getMetadataLanguages(this.dataverse).entrySet();
+    }
+    
+    private Set<Entry<String, String>> curationLabelSetOptions = null; 
+    
+    public Set<Entry<String, String>> getCurationLabelSetOptions() {
+        if (curationLabelSetOptions == null) {
+            HashMap<String, String> setNames = new HashMap<String, String>();
+            Set<String> allowedSetNames = systemConfig.getCurationLabels().keySet();
+            if (allowedSetNames.size() > 0) {
+                // Add an entry for the default (inherited from an ancestor or the system
+                // default)
+                String inheritedLabelSet = getCurationLabelSetNameLabel();
+                if (!StringUtils.isBlank(inheritedLabelSet)) {
+                    setNames.put(inheritedLabelSet, SystemConfig.DEFAULTCURATIONLABELSET);
+                }
+                // Add an entry for disabled
+                setNames.put(BundleUtil.getStringFromBundle("dataverse.curationLabels.disabled"), SystemConfig.CURATIONLABELSDISABLED);
+
+                allowedSetNames.forEach(name -> {
+                    String localizedName = DatasetUtil.getLocaleCurationStatusLabelFromString(name) ;
+                    setNames.put(localizedName,name);
+                });
+            }
+            curationLabelSetOptions = setNames.entrySet();
+        }
+        return curationLabelSetOptions;
+    }
+
+    public String getCurationLabelSetNameLabel() {
+        Dataverse parent = dataverse.getOwner();
+        String setName = null;
+        boolean fromAncestor = false;
+        if (parent != null) {
+            setName = parent.getEffectiveCurationLabelSetName();
+            // recurse dataverse chain to root and if any have a curation label set name set,
+            // fromAncestor is true
+            while (parent != null) {
+                if (!parent.getCurationLabelSetName().equals(SystemConfig.DEFAULTCURATIONLABELSET)) {
+                    fromAncestor = true;
+                    break;
+                }
+                parent = parent.getOwner();
+            }
+        }
+        if (setName != null) {
+            if (fromAncestor) {
+                setName = setName + " " + BundleUtil.getStringFromBundle("dataverse.inherited");
+            } else {
+                setName = setName + " " + BundleUtil.getStringFromBundle("dataverse.default");
+            }
+        }
+        return setName;
+    }
+
+    public Set<Entry<String, String>> getGuestbookEntryOptions() {
+        return settingsWrapper.getGuestbookEntryOptions(this.dataverse).entrySet();
+    }
+
+    public Set<Entry<String, String>> getPidProviderOptions() {
+        PidProvider defaultPidProvider = pidProviderFactoryBean.getDefaultPidGenerator();
+        Set<String> providerIds = PidUtil.getManagedProviderIds();
+        Set<Entry<String, String>> options = new HashSet<Entry<String, String>>();
+        if (providerIds.size() > 1) {
+
+            String label = null;
+            if (this.dataverse.getOwner() != null && this.dataverse.getOwner().getEffectivePidGenerator()!= null) {
+                PidProvider inheritedPidProvider = this.dataverse.getOwner().getEffectivePidGenerator();
+                label = inheritedPidProvider.getLabel() + " " + BundleUtil.getStringFromBundle("dataverse.inherited") + ": "
+                        + inheritedPidProvider.getProtocol() + ":" + inheritedPidProvider.getAuthority()
+                        + inheritedPidProvider.getSeparator() + inheritedPidProvider.getShoulder();
+            } else {
+                label = defaultPidProvider.getLabel() +  " " + BundleUtil.getStringFromBundle("dataverse.default") + ": "
+                        + defaultPidProvider.getProtocol() + ":" + defaultPidProvider.getAuthority()
+                        + defaultPidProvider.getSeparator() + defaultPidProvider.getShoulder();
+            }
+            Entry<String, String> option = new AbstractMap.SimpleEntry<String, String>("default", label);
+            options.add(option);
+        }
+        for (String providerId : providerIds) {
+            PidProvider pidProvider = PidUtil.getPidProvider(providerId);
+            String label = pidProvider.getLabel() + ": " + pidProvider.getProtocol() + ":" + pidProvider.getAuthority()
+                    + pidProvider.getSeparator() + pidProvider.getShoulder();
+            Entry<String, String> option = new AbstractMap.SimpleEntry<String, String>(providerId, label);
+            options.add(option);
+        }
+        return options;
+    }
+
+    public void updateDisplayOnCreate(Long mdbId, Long dsftId, boolean currentValue) {
+        for (MetadataBlock mdb : allMetadataBlocks) {
+            if (mdb.getId().equals(mdbId)) {
+                for (DatasetFieldType dsft : mdb.getDatasetFieldTypes()) {
+                    if (dsft.getId().equals(dsftId)) {
+                        // Update value in memory
+                        dsft.setLocalDisplayOnCreate(!currentValue);
+                        
+                        // Update or create input level
+                        DataverseFieldTypeInputLevel existingLevel = dataverseFieldTypeInputLevelService
+                            .findByDataverseIdDatasetFieldTypeId(dataverse.getId(), dsftId);
+                        
+                        if (existingLevel != null) {
+                            existingLevel.setDisplayOnCreate(!currentValue);
+                            dataverseFieldTypeInputLevelService.save(existingLevel);
+                        } else {
+                            DataverseFieldTypeInputLevel newLevel = new DataverseFieldTypeInputLevel(
+                                dsft, 
+                                dataverse, 
+                                dsft.isRequiredDV(),
+                                true,  // default include
+                                !currentValue  // new value of displayOnCreate
+                            );
+                            dataverseFieldTypeInputLevelService.save(newLevel);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void saveInputLevels(List<DataverseFieldTypeInputLevel> listDFTIL, DatasetFieldType dsft, Dataverse dataverse) {
+        // If the field already has an input level, update it
+        DataverseFieldTypeInputLevel existingLevel = dataverseFieldTypeInputLevelService
+            .findByDataverseIdDatasetFieldTypeId(dataverse.getId(), dsft.getId());
+        
+        if (existingLevel != null) {
+            existingLevel.setDisplayOnCreate(dsft.getLocalDisplayOnCreate());
+            existingLevel.setInclude(dsft.isInclude());
+            existingLevel.setRequired(dsft.isRequiredDV());
+            listDFTIL.add(existingLevel);
+        } else if (!dsft.isInclude() || (dsft.getLocalDisplayOnCreate()!=null) || dsft.isRequiredDV()) {
+            // Only create new input level if there is any specific configuration
+            listDFTIL.add(new DataverseFieldTypeInputLevel(
+                dsft, 
+                dataverse, 
+                dsft.isRequiredDV(), 
+                dsft.isInclude(), 
+                dsft.getLocalDisplayOnCreate()
+            ));
+        }
     }
 }

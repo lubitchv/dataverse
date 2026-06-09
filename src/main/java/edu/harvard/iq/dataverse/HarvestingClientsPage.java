@@ -9,7 +9,6 @@ import edu.harvard.iq.dataverse.authorization.AuthenticationServiceBean;
 import edu.harvard.iq.dataverse.engine.command.DataverseRequest;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
 import edu.harvard.iq.dataverse.engine.command.impl.CreateHarvestingClientCommand;
-import edu.harvard.iq.dataverse.engine.command.impl.DeleteHarvestingClientCommand;
 import edu.harvard.iq.dataverse.engine.command.impl.UpdateHarvestingClientCommand;
 import edu.harvard.iq.dataverse.harvest.client.HarvesterServiceBean;
 import edu.harvard.iq.dataverse.harvest.client.HarvestingClient;
@@ -20,25 +19,26 @@ import edu.harvard.iq.dataverse.timer.DataverseTimerServiceBean;
 import edu.harvard.iq.dataverse.util.BundleUtil;
 import edu.harvard.iq.dataverse.util.JsfHelper;
 import static edu.harvard.iq.dataverse.util.JsfHelper.JH;
+import edu.harvard.iq.dataverse.util.StringUtil;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
+import java.util.Collections;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
-import javax.ejb.EJB;
-import javax.faces.application.FacesMessage;
-import javax.faces.component.UIComponent;
-import javax.faces.component.UIInput;
-import javax.faces.context.FacesContext;
-import javax.faces.event.ActionEvent;
-import javax.faces.model.SelectItem;
-import javax.faces.view.ViewScoped;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.servlet.http.HttpServletRequest;
-import org.apache.commons.lang.StringUtils;
+import jakarta.ejb.EJB;
+import jakarta.faces.application.FacesMessage;
+import jakarta.faces.component.UIComponent;
+import jakarta.faces.component.UIInput;
+import jakarta.faces.context.FacesContext;
+import jakarta.faces.event.ActionEvent;
+import jakarta.faces.model.SelectItem;
+import jakarta.faces.view.ViewScoped;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.servlet.http.HttpServletRequest;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  *
@@ -77,7 +77,8 @@ public class HarvestingClientsPage implements java.io.Serializable {
     private Dataverse dataverse;
     private Long dataverseId = null;
     private HarvestingClient selectedClient;
-    
+    private boolean setListTruncated = false;
+
     //private static final String solrDocIdentifierDataset = "dataset_";
     
     public enum PageMode {
@@ -206,6 +207,9 @@ public class HarvestingClientsPage implements java.io.Serializable {
         return CreateStep.FOUR == this.createStep;
     }
     
+    public boolean isSetListTruncated() {
+        return setListTruncated;
+    }
     
     public void runHarvest(HarvestingClient harvestingClient) {
         try {
@@ -238,7 +242,9 @@ public class HarvestingClientsPage implements java.io.Serializable {
         setSelectedClient(harvestingClient);
         
         this.newNickname = harvestingClient.getName();
+        this.sourceName = harvestingClient.getSourceName();
         this.newHarvestingUrl = harvestingClient.getHarvestingUrl();
+        this.customHeader = harvestingClient.getCustomHttpHeaders();
         this.initialSettingsValidated = false;
         
         // TODO: do we want to try and contact the server, again, to make 
@@ -246,7 +252,7 @@ public class HarvestingClientsPage implements java.io.Serializable {
         // and if not, what do we do? 
         // alternatively, should we make these 2 fields not editable at all?
         
-        this.newOaiSet = !StringUtils.isEmpty(harvestingClient.getHarvestingSet()) ? harvestingClient.getHarvestingSet() : "none";
+        this.newOaiSet = !StringUtils.isEmpty(harvestingClient.getHarvestingSet()) ? harvestingClient.getHarvestingSet() : "";
         this.newMetadataFormat = harvestingClient.getMetadataPrefix();
         this.newHarvestingStyle = harvestingClient.getHarvestStyle();
         
@@ -318,10 +324,9 @@ public class HarvestingClientsPage implements java.io.Serializable {
     }
     
     public void createClient(ActionEvent ae) {
-        
-        HarvestingClient newHarvestingClient = new HarvestingClient(); // will be set as type OAI by default
-        
-        newHarvestingClient.setName(newNickname);
+
+        // will be set as type OAI by default
+        HarvestingClient newHarvestingClient = fillHarvestingClient(new HarvestingClient());
         
         if (getSelectedDestinationDataverse() == null) {
             JsfHelper.JH.addMessage(FacesMessage.SEVERITY_ERROR,BundleUtil.getStringFromBundle("harvest.create.error"));
@@ -332,34 +337,6 @@ public class HarvestingClientsPage implements java.io.Serializable {
             getSelectedDestinationDataverse().setHarvestingClientConfigs(new ArrayList<>());
         }
         getSelectedDestinationDataverse().getHarvestingClientConfigs().add(newHarvestingClient);
-        
-        newHarvestingClient.setHarvestingUrl(newHarvestingUrl);
-        if (!StringUtils.isEmpty(newOaiSet)) {
-            newHarvestingClient.setHarvestingSet(newOaiSet);
-        }
-        newHarvestingClient.setMetadataPrefix(newMetadataFormat);
-        newHarvestingClient.setHarvestStyle(newHarvestingStyle);
-        
-        if (isNewHarvestingScheduled()) {
-            newHarvestingClient.setScheduled(true);
-            
-            if (isNewHarvestingScheduledWeekly()) {
-                newHarvestingClient.setSchedulePeriod(HarvestingClient.SCHEDULE_PERIOD_WEEKLY);
-                if (getWeekDayNumber() == null) {
-                    // create a "week day is required..." error message, etc. 
-                    // but we may be better off not even giving them an opportunity 
-                    // to leave the field blank - ?
-                }
-                newHarvestingClient.setScheduleDayOfWeek(getWeekDayNumber());
-            } else {
-                newHarvestingClient.setSchedulePeriod(HarvestingClient.SCHEDULE_PERIOD_DAILY);
-            }
-            
-            if (getHourOfDay() == null) {
-                // see the comment above, about the day of week. same here.
-            }
-            newHarvestingClient.setScheduleHourOfDay(getHourOfDay());
-        }
         
         // make default archive url (used to generate links pointing back to the 
         // archival sources, when harvested datasets are displayed in search results),
@@ -406,50 +383,9 @@ public class HarvestingClientsPage implements java.io.Serializable {
     // this saves an existing client that the user has edited: 
     
     public void saveClient(ActionEvent ae) {
-        
-        HarvestingClient harvestingClient = getSelectedClient(); 
-        
-        if (harvestingClient == null) {
-            // TODO: 
-            // tell the user somehow that the client cannot be saved, and advise
-            // them to save the settings they have entered. 
-            // as of now - we will show an error message, but only after the 
-            // edit form has been closed.        
-        }
-        
-        // nickname is not editable for existing clients:
-        //harvestingClient.setName(newNickname);
-        harvestingClient.setHarvestingUrl(newHarvestingUrl);
-        harvestingClient.setHarvestingSet(newOaiSet);
-        harvestingClient.setMetadataPrefix(newMetadataFormat);
-        harvestingClient.setHarvestStyle(newHarvestingStyle);
-        
-        if (isNewHarvestingScheduled()) {
-            harvestingClient.setScheduled(true);
-            
-            if (isNewHarvestingScheduledWeekly()) {
-                harvestingClient.setSchedulePeriod(HarvestingClient.SCHEDULE_PERIOD_WEEKLY);
-                if (getWeekDayNumber() == null) {
-                    // create a "week day is required..." error message, etc. 
-                    // but we may be better off not even giving them an opportunity 
-                    // to leave the field blank - ?
-                }
-                harvestingClient.setScheduleDayOfWeek(getWeekDayNumber());
-            } else {
-                harvestingClient.setSchedulePeriod(HarvestingClient.SCHEDULE_PERIOD_DAILY);
-            }
-            
-            if (getHourOfDay() == null) {
-                // see the comment above, about the day of week. same here.
-            }
-            harvestingClient.setScheduleHourOfDay(getHourOfDay());
-        } else {
-            harvestingClient.setScheduled(false);
-        }
-        
-        // will try to save it now:
-        
         try {
+            HarvestingClient harvestingClient = fillHarvestingClient(getSelectedClient());
+
             harvestingClient = engineService.submit( new UpdateHarvestingClientCommand(dvRequestService.getDataverseRequest(), harvestingClient));
             
             configuredHarvestingClients = harvestingClientService.getAllHarvestingClients();
@@ -470,9 +406,50 @@ public class HarvestingClientsPage implements java.io.Serializable {
         }
         setPageMode(PageMode.VIEW);
 
-        
+
     }
-    
+
+    /**
+     * Based on a new harvestingClient instance or an existing one, it will update basics fields with new UI fields values
+     * @param harvestingClient new or existing harvestingClient to update
+     * @return harvestingClient with updated values
+     */
+    private HarvestingClient fillHarvestingClient(HarvestingClient harvestingClient) {
+        // update nickname if it's a new object otherwise is not editable for existing clients
+        if(harvestingClient.getId() == null) {
+            harvestingClient.setName(newNickname);
+        }
+        harvestingClient.setSourceName(sourceName);
+        harvestingClient.setHarvestingUrl(newHarvestingUrl);
+        harvestingClient.setCustomHttpHeaders(customHeader);
+        if (!StringUtils.isEmpty(newOaiSet)) {
+            harvestingClient.setHarvestingSet(newOaiSet);
+        }
+        harvestingClient.setMetadataPrefix(newMetadataFormat);
+        harvestingClient.setHarvestStyle(newHarvestingStyle);
+
+        harvestingClient.setScheduled(isNewHarvestingScheduled());
+        if (isNewHarvestingScheduled()) {
+            if (isNewHarvestingScheduledWeekly()) {
+                harvestingClient.setSchedulePeriod(HarvestingClient.SCHEDULE_PERIOD_WEEKLY);
+                if (getWeekDayNumber() == null) {
+                    // create a "week day is required..." error message, etc.
+                    // but we may be better off not even giving them an opportunity
+                    // to leave the field blank - ?
+                }
+                harvestingClient.setScheduleDayOfWeek(getWeekDayNumber());
+            } else {
+                harvestingClient.setSchedulePeriod(HarvestingClient.SCHEDULE_PERIOD_DAILY);
+            }
+
+            if (getHourOfDay() == null) {
+                // see the comment above, about the day of week. same here.
+            }
+            harvestingClient.setScheduleHourOfDay(getHourOfDay());
+        }
+        return harvestingClient;
+    }
+
     public void validateMetadataFormat(FacesContext context, UIComponent toValidate, Object rawValue) {
         String value = (String) rawValue;
         UIInput input = (UIInput) toValidate;
@@ -488,6 +465,23 @@ public class HarvestingClientsPage implements java.io.Serializable {
             input.setValid(false);
             context.addMessage(toValidate.getClientId(),
                     new FacesMessage(FacesMessage.SEVERITY_ERROR, "", BundleUtil.getStringFromBundle("harvestclients.newClientDialog.oaiMetadataFormat.required")));
+
+        }
+    }
+    
+    public void validateRemoteArchiveStyle(FacesContext context, UIComponent toValidate, Object rawValue) {
+        String value = (String) rawValue;
+        UIInput input = (UIInput) toValidate;
+        input.setValid(true); // Optimistic approach
+        
+        // the only validation we want is to make sure the select one of the 
+        // values from the menu. 
+        if (context.getExternalContext().getRequestParameterMap().get("DO_VALIDATION") != null
+                && StringUtils.isEmpty(value)) {
+
+            input.setValid(false);
+            context.addMessage(toValidate.getClientId(),
+                    new FacesMessage(FacesMessage.SEVERITY_ERROR, "", BundleUtil.getStringFromBundle("harvestclients.newClientDialog.harvestingStyle.required")));
 
         }
     }
@@ -531,6 +525,9 @@ public class HarvestingClientsPage implements java.io.Serializable {
         if (!StringUtils.isEmpty(getNewHarvestingUrl())) {
 
             OaiHandler oaiHandler = new OaiHandler(getNewHarvestingUrl());
+            if (getNewCustomHeader() != null) {
+                oaiHandler.setCustomHeaders(oaiHandler.makeCustomHeaders(getNewCustomHeader()));
+            }
             boolean success = true;
             String message = null;
 
@@ -559,10 +556,15 @@ public class HarvestingClientsPage implements java.io.Serializable {
             }
             // And if that worked, the list of sets provided:
 
+            ArrayList<String> sets = null;
+            
+            // reset the sets menu:
+            setOaiSetsSelectItems(null);
+            setListTruncated = false;
+            
             if (success) {
                 try {
-                    List<String> sets = oaiHandler.runListSets();
-                    createOaiSetsSelectItems(sets);
+                    sets = oaiHandler.runListSets();
                 } catch (Exception ex) {
                     //success = false; 
                     // ok - we'll try and live without sets for now... 
@@ -576,6 +578,24 @@ public class HarvestingClientsPage implements java.io.Serializable {
             }
 
             if (success) {
+                if (sets != null) {
+                    if (oaiHandler.isSetListTruncated()) {
+                        // If it was taking too long to retrieve the full list 
+                        // of sets (oai.datacite.org/oai - looking at you! -
+                        // and we had to truncate it:
+                        setListTruncated = true;
+
+                        // And if we are re-configuring an existing client, with 
+                        // a specific set in place - let's make sure it's on the pull down 
+                        // menu list; even if we have failed to retrieve it from the server. 
+                        if (StringUtil.nonEmpty(this.newOaiSet)) {
+                            if (!sets.contains(this.newOaiSet)) {
+                                sets.add(0, this.newOaiSet);
+                            }
+                        }
+                    }
+                    createOaiSetsSelectItems(sets);
+                }
                 return true;
             }
 
@@ -589,6 +609,23 @@ public class HarvestingClientsPage implements java.io.Serializable {
         return false;
     }
     
+    public boolean validateCustomHeader() {
+        if (!StringUtils.isEmpty(getNewCustomHeader())) {
+            // TODO: put this method somewhere else as a static utility
+            
+            // check that it's looking like "{header-name}: {header value}" at least
+            if (!Pattern.matches("^[a-zA-Z0-9\\_\\-]+:.*",getNewCustomHeader())) {
+                FacesContext.getCurrentInstance().addMessage(getNewClientCustomHeaderInputField().getClientId(),
+                    new FacesMessage(FacesMessage.SEVERITY_ERROR, "", BundleUtil.getStringFromBundle("harvestclients.newClientDialog.customHeader.invalid")));
+
+                return false; 
+            }
+        }
+        
+        // this setting is optional
+        return true;
+    }
+    
     public void validateInitialSettings() {
         if (isHarvestTypeOAI()) {
             boolean nicknameValidated = true; 
@@ -598,9 +635,10 @@ public class HarvestingClientsPage implements java.io.Serializable {
                 destinationDataverseValidated = validateSelectedDataverse();
             }
             boolean urlValidated = validateServerUrlOAI();
+            boolean customHeaderValidated = validateCustomHeader();
             
-            if (nicknameValidated && destinationDataverseValidated && urlValidated) {
-                // In Create mode we want to run all 3 validation tests; this is why 
+            if (nicknameValidated && destinationDataverseValidated && urlValidated && customHeaderValidated) {
+                // In Create mode we want to run all 4 validation tests; this is why 
                 // we are not doing "if ((validateNickname() && validateServerUrlOAI())"
                 // in the line above. -- L.A. 4.4 May 2016.
                 
@@ -642,12 +680,16 @@ public class HarvestingClientsPage implements java.io.Serializable {
     
     UIInput newClientNicknameInputField;
     UIInput newClientUrlInputField;
+    UIInput newClientCustomHeaderInputField; 
     UIInput hiddenInputField; 
-    /*UISelectOne*/ UIInput metadataFormatMenu; 
+    /*UISelectOne*/ UIInput metadataFormatMenu;
+    UIInput remoteArchiveStyleMenu;
     UIInput selectedDataverseMenu;
     
     private String newNickname = "";
+    private String sourceName = "";
     private String newHarvestingUrl = "";
+    private String customHeader = null; 
     private boolean initialSettingsValidated = false;
     private String newOaiSet = "";
     private String newMetadataFormat = ""; 
@@ -670,11 +712,13 @@ public class HarvestingClientsPage implements java.io.Serializable {
     public void initNewClient(ActionEvent ae) {
         //this.selectedClient = new HarvestingClient();
         this.newNickname = "";
+        this.sourceName = "";
         this.newHarvestingUrl = "";
+        this.customHeader = null; 
         this.initialSettingsValidated = false;
         this.newOaiSet = "";
         this.newMetadataFormat = "";
-        this.newHarvestingStyle = HarvestingClient.HARVEST_STYLE_DATAVERSE;
+        this.newHarvestingStyle = "";
         
         this.harvestTypeRadio = harvestTypeRadioOAI;
         this.harvestingScheduleRadio = harvestingScheduleRadioNone; 
@@ -713,6 +757,14 @@ public class HarvestingClientsPage implements java.io.Serializable {
     
     public void setNewHarvestingUrl(String newHarvestingUrl) {
         this.newHarvestingUrl = newHarvestingUrl;
+    }
+    
+    public String getNewCustomHeader() {
+        return customHeader; 
+    }
+    
+    public void setNewCustomHeader(String customHeader) {
+        this.customHeader = customHeader;
     }
     
     public int getHarvestTypeRadio() {
@@ -761,6 +813,14 @@ public class HarvestingClientsPage implements java.io.Serializable {
     
     public void setHarvestingScheduleRadio(int harvestingScheduleRadio) {
         this.harvestingScheduleRadio = harvestingScheduleRadio;
+    }
+
+    public String getSourceName() {
+        return sourceName;
+    }
+
+    public void setSourceName(String sourceName) {
+        this.sourceName = sourceName;
     }
     
     public boolean isNewHarvestingScheduled() {
@@ -824,6 +884,14 @@ public class HarvestingClientsPage implements java.io.Serializable {
         this.newClientUrlInputField = newClientInputField;
     }
     
+    public UIInput getNewClientCustomHeaderInputField() {
+        return newClientCustomHeaderInputField;
+    }
+
+    public void setNewClientCustomHeaderInputField(UIInput newClientInputField) {
+        this.newClientCustomHeaderInputField = newClientInputField;
+    }
+    
     public UIInput getHiddenInputField() {
         return hiddenInputField;
     }
@@ -838,6 +906,14 @@ public class HarvestingClientsPage implements java.io.Serializable {
 
     public void setMetadataFormatMenu(UIInput metadataFormatMenu) {
         this.metadataFormatMenu = metadataFormatMenu;
+    }
+    
+    public UIInput getRemoteArchiveStyleMenu() {
+        return remoteArchiveStyleMenu;
+    }
+
+    public void setRemoteArchiveStyleMenu(UIInput remoteArchiveStyleMenu) {
+        this.remoteArchiveStyleMenu = remoteArchiveStyleMenu;
     }
     
     public UIInput getSelectedDataverseMenu() {
@@ -861,6 +937,12 @@ public class HarvestingClientsPage implements java.io.Serializable {
     private void createOaiSetsSelectItems(List<String> setNames) {
         setOaiSetsSelectItems(new ArrayList<>());
         if (setNames != null) {
+            
+            // Let's sort the list - otherwise, if the list is long enough, 
+            // using this pulldown menu may be very difficult:
+            
+            Collections.sort(setNames, String.CASE_INSENSITIVE_ORDER);
+            
             for (String set: setNames) {
                 if (!StringUtils.isEmpty(set)) {
                     getOaiSetsSelectItems().add(new SelectItem(set, set));

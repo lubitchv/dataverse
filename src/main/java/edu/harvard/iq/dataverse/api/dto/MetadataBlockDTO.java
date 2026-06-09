@@ -10,6 +10,7 @@ import java.util.List;
  */
 public  class MetadataBlockDTO {
          String displayName;
+         String name;
          List<FieldDTO> fields = new ArrayList<FieldDTO>();
 
         public String getDisplayName() {
@@ -55,7 +56,15 @@ public  class MetadataBlockDTO {
             } else {
                 // If this Field doesn't allow multiples, just replace the value 
                 // with the new field value.
-                current.value = newField.value;
+                // (or concatenate, if this is a primitive field)
+                if (newField.typeClass.equals("primitive")) {
+                    String currentValue = current.getSinglePrimitive(); 
+                    String newValue = currentValue + " " + newField.getSinglePrimitive();
+                    current.setSinglePrimitive(newValue);
+                } else {
+                    current.value = newField.value;
+                    
+                }
             }
         }
     }
@@ -70,6 +79,14 @@ public  class MetadataBlockDTO {
 
         @Override
         public String toString() {
-            return "MetadataBlockDTO{" + "displayName=" + displayName + ", fields=" + fields + '}';
+            return "MetadataBlockDTO{" + "displayName=" + displayName + ", name=" + name + ", fields=" + fields + '}';
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
         }
      }

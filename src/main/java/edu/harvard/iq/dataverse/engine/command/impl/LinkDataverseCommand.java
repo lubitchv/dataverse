@@ -17,19 +17,21 @@ import edu.harvard.iq.dataverse.engine.command.RequiredPermissions;
 import edu.harvard.iq.dataverse.engine.command.exception.CommandException;
 import edu.harvard.iq.dataverse.engine.command.exception.IllegalCommandException;
 import edu.harvard.iq.dataverse.engine.command.exception.PermissionException;
+import edu.harvard.iq.dataverse.util.BundleUtil;
 import java.io.IOException;
 import java.sql.Timestamp;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
-import java.util.concurrent.Future;
-import javax.ws.rs.core.Response;
+
+import jakarta.ws.rs.core.Response;
 import org.apache.solr.client.solrj.SolrServerException;
 
 /**
  *
  * @author skraffmiller
  */
-@RequiredPermissions(Permission.PublishDataverse)
+@RequiredPermissions(Permission.LinkDataverse)
 public class LinkDataverseCommand extends AbstractCommand<DataverseLinkingDataverse> {
     
     private final Dataverse linkedDataverse;
@@ -45,13 +47,16 @@ public class LinkDataverseCommand extends AbstractCommand<DataverseLinkingDatave
     public DataverseLinkingDataverse execute(CommandContext ctxt) throws CommandException {
         if ((!(getUser() instanceof AuthenticatedUser) || !getUser().isSuperuser())) {
             throw new PermissionException("Link Dataverse can only be called by superusers.",
-                    this, Collections.singleton(Permission.PublishDataverse), linkingDataverse);
+                    this, Collections.singleton(Permission.LinkDataverse), linkingDataverse);
         }
         if (linkedDataverse.equals(linkingDataverse)) {
             throw new IllegalCommandException("Can't link a dataverse to itself", this);
         }
         if (linkedDataverse.getOwners().contains(linkingDataverse)) {
             throw new IllegalCommandException("Can't link a dataverse to its parents", this);
+        }
+        if (ctxt.dvLinking().alreadyLinked(linkingDataverse, linkedDataverse)) {
+            throw new IllegalCommandException(BundleUtil.getStringFromBundle("dataverse.linked.error.alreadyLinked", Arrays.asList(linkedDataverse.getName(), linkingDataverse.getName())), this);
         }
         
         DataverseLinkingDataverse dataverseLinkingDataverse = new DataverseLinkingDataverse();

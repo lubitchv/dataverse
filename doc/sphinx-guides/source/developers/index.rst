@@ -4,11 +4,12 @@
    contain the root `toctree` directive.
 
 Developer Guide
-=======================================================
+===============
 
 **Contents:**
 
 .. toctree::
+   :maxdepth: 2
 
    intro
    dev-environment
@@ -18,18 +19,33 @@ Developer Guide
    version-control
    sql-upgrade-scripts
    testing
-   documentation
+   api-design
+   security
+   performance
    dependencies
    debugging
    coding-style
+   configuration
    deployment
    containers
    making-releases
+   making-library-releases
+   metadataexport
    tools
    unf/index
    make-data-count
    remote-users
    geospatial
    selinux
-   big-data-support
+   aux-file-support
+   s3-direct-upload-api
+   globus-api
+   dataset-semantic-metadata-api
+   dataset-migration-api 
    workflows
+   fontcustom
+   classic-dev-env
+   search-services
+   testing/fixtures.md
+   testing/performance.md
+   
